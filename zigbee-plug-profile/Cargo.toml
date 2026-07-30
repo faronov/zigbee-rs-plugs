@@ -1,0 +1,16 @@
+[package]
+name = "zigbee-plug-profile"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "zigbee-rs Smart Plug profile adapter"
+
+[dependencies]
+zigbee-mac.workspace = true
+zigbee-plug-core.workspace = true
+zigbee-runtime.workspace = true
+zigbee-zcl.workspace = true
+
+[lints]
+workspace = true

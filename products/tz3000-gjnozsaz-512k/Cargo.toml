@@ -1,0 +1,12 @@
+[package]
+name = "tz3000-gjnozsaz-512k"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zigbee-plug-hardware.workspace = true
+
+[lints]
+workspace = true

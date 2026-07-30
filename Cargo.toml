@@ -1,0 +1,43 @@
+[workspace]
+resolver = "2"
+members = [
+    "boards/*",
+    "drivers/*",
+    "examples/mock-plug",
+    "plug-core",
+    "plug-hardware",
+    "products/*",
+    "zigbee-plug-profile",
+]
+
+[workspace.package]
+version = "0.1.0-alpha.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/faronov/zigbee-rs-plugs"
+rust-version = "1.88"
+
+[workspace.dependencies]
+bl0937 = { path = "drivers/bl0937" }
+bl0942 = { path = "drivers/bl0942" }
+zigbee-plug-core = { path = "plug-core" }
+zigbee-plug-hardware = { path = "plug-hardware" }
+zigbee-plug-profile = { path = "zigbee-plug-profile" }
+heapless = "0.9"
+tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1c79264a3014ec0a442ccae3860306605d1cdb90" }
+zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1c79264a3014ec0a442ccae3860306605d1cdb90" }
+zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1c79264a3014ec0a442ccae3860306605d1cdb90", features = ["router"] }
+zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1c79264a3014ec0a442ccae3860306605d1cdb90" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_arch, values("tc32"))'] }
+
+[workspace.lints.clippy]
+all = "deny"
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"

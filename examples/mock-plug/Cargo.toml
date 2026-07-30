@@ -1,0 +1,16 @@
+[package]
+name = "mock-smart-plug"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+bl0942.workspace = true
+zigbee-plug-core.workspace = true
+zigbee-plug-profile.workspace = true
+zigbee-runtime.workspace = true
+
+[lints]
+workspace = true

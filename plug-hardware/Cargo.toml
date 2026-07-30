@@ -1,0 +1,10 @@
+[package]
+name = "zigbee-plug-hardware"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Typed board, model, and flash catalog for zigbee-rs smart plugs"
+
+[lints]
+workspace = true

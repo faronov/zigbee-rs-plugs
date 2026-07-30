@@ -1,0 +1,12 @@
+[package]
+name = "legacy-bl0937-pd6"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zigbee-plug-hardware.workspace = true
+
+[lints]
+workspace = true

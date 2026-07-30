@@ -1,0 +1,10 @@
+[package]
+name = "zigbee-plug-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Hardware-independent smart plug control and persistence logic"
+
+[lints]
+workspace = true

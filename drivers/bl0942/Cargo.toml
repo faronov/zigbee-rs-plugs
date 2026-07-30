@@ -1,0 +1,10 @@
+[package]
+name = "bl0942"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "no_std BL0942 UART protocol and metering decoder"
+
+[lints]
+workspace = true

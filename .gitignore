@@ -1,0 +1,6 @@
+/target/
+**/*.bin
+**/*.elf
+**/*.lst
+**/*.zigbee
+.DS_Store
