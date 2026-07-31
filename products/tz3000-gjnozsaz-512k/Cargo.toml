@@ -6,7 +6,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+tlsr8258-ts011f-bl0942.workspace = true
 zigbee-plug-hardware.workspace = true
+zigbee-plug-storage.workspace = true
 
 [lints]
 workspace = true

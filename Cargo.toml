@@ -4,11 +4,22 @@ members = [
     "boards/*",
     "drivers/*",
     "examples/mock-plug",
+    "plug-controller",
     "plug-core",
     "plug-hardware",
+    "plug-storage",
     "products/*",
     "zigbee-plug-profile",
 ]
+# `firmware/tlsr8258-plug` is a `no_std`/`no_main` tc32 binary crate with its
+# own `.cargo/config.toml` (hardcoded `tc32-unknown-none-elf` target and
+# `-Z build-std`), exactly like zigbee-rs's own
+# `examples/telink-tlsr8258-router`. Keeping it out of this workspace means
+# plain `cargo build/test/clippy/doc --workspace` (this repo's host CI)
+# never tries to cross-compile it or inherit its target override; it is
+# built/checked only through `scripts/tlsr8258-firmware.sh` or the
+# `build-tc32.yml` workflow, from its own directory.
+exclude = ["firmware/tlsr8258-plug"]
 
 [workspace.package]
 version = "0.1.0-alpha.1"
@@ -20,14 +31,22 @@ rust-version = "1.88"
 [workspace.dependencies]
 bl0937 = { path = "drivers/bl0937" }
 bl0942 = { path = "drivers/bl0942" }
+tlsr8258-legacy-bl0937 = { path = "boards/tlsr8258-legacy-bl0937" }
+tlsr8258-ts011f-bl0942 = { path = "boards/tlsr8258-ts011f-bl0942" }
+zigbee-plug-controller = { path = "plug-controller" }
 zigbee-plug-core = { path = "plug-core" }
 zigbee-plug-hardware = { path = "plug-hardware" }
 zigbee-plug-profile = { path = "zigbee-plug-profile" }
+zigbee-plug-storage = { path = "plug-storage" }
+embedded-storage = "0.3"
 heapless = "0.9"
-tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1c79264a3014ec0a442ccae3860306605d1cdb90" }
-zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1c79264a3014ec0a442ccae3860306605d1cdb90" }
-zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1c79264a3014ec0a442ccae3860306605d1cdb90", features = ["router"] }
-zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1c79264a3014ec0a442ccae3860306605d1cdb90" }
+tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f" }
+tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f" }
+zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f" }
+zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f" }
+zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f", features = ["router"] }
+zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f" }
+zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

@@ -1,0 +1,17 @@
+[package]
+name = "zigbee-plug-controller"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Host-testable smart-plug controller: relay/button/LED policy, protection, and command reconciliation over zigbee-plug-profile"
+
+[dependencies]
+zigbee-plug-core.workspace = true
+zigbee-plug-profile.workspace = true
+
+[dev-dependencies]
+zigbee-runtime.workspace = true
+
+[lints]
+workspace = true

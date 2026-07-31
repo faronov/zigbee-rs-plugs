@@ -1,0 +1,90 @@
+[package]
+name = "tlsr8258-plug"
+version = "0.1.0-alpha.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/faronov/zigbee-rs-plugs"
+description = "TLSR8258 smart-plug firmware: one binary, one product feature"
+# EXPERIMENTAL, unproven on hardware. See README.md in this directory and
+# docs/safety.md at the workspace root before flashing anything.
+publish = false
+
+# Excluded from the workspace (see the root Cargo.toml's `exclude` comment):
+# this crate is `no_std`/`no_main`, targets `tc32-unknown-none-elf` only, and
+# is built exclusively through `scripts/tlsr8258-firmware.sh` or
+# `.github/workflows/build-tc32.yml`, never through `cargo test --workspace`.
+
+[[bin]]
+name = "tlsr8258-plug"
+path = "src/main.rs"
+
+[features]
+# Exactly one of these five must be enabled — see `src/main.rs`'s
+# `compile_error!` guard. There is deliberately no `default` feature: an
+# unconfigured build must fail loudly, not silently pick a product.
+default = []
+
+tz3000-gjnozsaz-1m = ["dep:tz3000-gjnozsaz-1m", "dep:tlsr8258-ts011f-bl0942", "dep:bl0942"]
+tz3000-gjnozsaz-512k = ["dep:tz3000-gjnozsaz-512k", "dep:tlsr8258-ts011f-bl0942", "dep:bl0942"]
+tz3000-w0qqde0g = ["dep:tz3000-w0qqde0g", "dep:tlsr8258-ts011f-bl0942", "dep:bl0942"]
+tz3000-zloso4jk = ["dep:tz3000-zloso4jk", "dep:tlsr8258-ts011f-bl0942", "dep:bl0942"]
+legacy-bl0937-pd6 = ["dep:legacy-bl0937-pd6", "dep:tlsr8258-legacy-bl0937", "dep:bl0937"]
+
+[dependencies]
+# Protocol stack (shared, generic — no product/board knowledge). This
+# crate is excluded from the root workspace (see its own `[package]`
+# comment above), so it cannot use `workspace = true` field inheritance —
+# unlike `zigbee-rs`'s own excluded `examples/telink-tlsr8258-router`
+# (which this crate's dependency list otherwise mirrors), these are
+# pinned directly to the same upstream git rev as the root workspace.
+zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f" }
+zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f" }
+zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f" }
+zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f", features = ["tlsr8258"] }
+zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f", features = ["router"] }
+
+# Platform.
+tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f" }
+tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f" }
+
+# Application/profile (shared, generic — no product/board knowledge).
+zigbee-plug-core = { path = "../../plug-core" }
+zigbee-plug-profile = { path = "../../zigbee-plug-profile" }
+zigbee-plug-controller = { path = "../../plug-controller" }
+zigbee-plug-storage = { path = "../../plug-storage" }
+
+# Boards: exactly one is pulled in transitively by the selected product
+# feature above (four BL0942 products share one board; BL0937 has its own).
+tlsr8258-ts011f-bl0942 = { path = "../../boards/tlsr8258-ts011f-bl0942", optional = true }
+tlsr8258-legacy-bl0937 = { path = "../../boards/tlsr8258-legacy-bl0937", optional = true }
+
+# Products: own model/manufacturer identity and flash layout (requirement
+# 2 — firmware never infers these by runtime fingerprint).
+tz3000-gjnozsaz-1m = { path = "../../products/tz3000-gjnozsaz-1m", optional = true }
+tz3000-gjnozsaz-512k = { path = "../../products/tz3000-gjnozsaz-512k", optional = true }
+tz3000-w0qqde0g = { path = "../../products/tz3000-w0qqde0g", optional = true }
+tz3000-zloso4jk = { path = "../../products/tz3000-zloso4jk", optional = true }
+legacy-bl0937-pd6 = { path = "../../products/legacy-bl0937-pd6", optional = true }
+
+# Metering drivers: exactly one family is pulled in by the selected feature.
+bl0942 = { path = "../../drivers/bl0942", optional = true }
+bl0937 = { path = "../../drivers/bl0937", optional = true }
+
+[lints.rust]
+# `no_std`/`no_main` entry (`_rust_entry`), the combined IRQ vector, and the
+# panic handler's inline assembly all require `unsafe`, unlike this
+# workspace's higher-level application crates (see the root workspace's
+# `unsafe_code = "deny"` lint and zigbee-rs's own
+# `examples/telink-tlsr8258-router`, which needs the same three `unsafe`
+# items for the same reason).
+unsafe_code = "allow"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_arch, values("tc32"))'] }
+
+[lints.clippy]
+all = "deny"
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"

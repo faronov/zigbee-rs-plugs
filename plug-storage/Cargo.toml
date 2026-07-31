@@ -1,0 +1,18 @@
+[package]
+name = "zigbee-plug-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared TLSR8258 flash-partition and Zigbee persistence wiring for zigbee-rs-plugs products"
+
+[dependencies]
+embedded-storage.workspace = true
+tlsr8258-hal.workspace = true
+tlsr8258-legacy-bl0937.workspace = true
+tlsr8258-ts011f-bl0942.workspace = true
+zigbee-plug-hardware.workspace = true
+zigbee-runtime.workspace = true
+
+[lints]
+workspace = true

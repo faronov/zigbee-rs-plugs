@@ -12,11 +12,32 @@ pub struct Bl0937Pins {
     pub sel: Pin,
 }
 
+/// Exclusive ownership token for this board's fitted onboard TLSR8258 flash.
+///
+/// Zero-sized. The only constructor is the private literal inside
+/// [`BoardResources::take`], which itself succeeds at most once per boot
+/// (it is gated by `tlsr8258_hal::peripherals::Peripherals::take`), so at
+/// most one live `OnboardFlash` value can ever exist. `zigbee-plug-storage`
+/// consumes it exactly once (`split_onboard_flash`) to derive the disjoint
+/// application-NV and security-journal partition tokens, which is what
+/// rules out a product safely constructing two overlapping raw-flash
+/// accessors for this board.
+pub struct OnboardFlash(());
+
 pub struct BoardResources {
     pub relay: Pin,
     pub leds: [Pin; 3],
     pub button: Pin,
     pub metering: Bl0937Pins,
+    pub flash: OnboardFlash,
+    /// Exclusive ownership token for the shared MISC-channel ADC, plus the
+    /// otherwise-unused GPIO pad ([`Bl0937Pins`] does not use PC5) that
+    /// Telink's Zbit flash-voltage guard drives as an output-high VBAT
+    /// sense source. Neither is touched by `BoardResources::initialize_safe`
+    /// — `tlsr8258_hal::adc::Adc::install_flash_voltage_guard` configures
+    /// PC5 itself the first time it samples.
+    pub adc: tlsr8258_hal::peripherals::Adc,
+    pub flash_voltage_pin: Pin,
 }
 
 impl BoardResources {
@@ -31,6 +52,7 @@ impl BoardResources {
             pd5,
             pd6,
             pd7,
+            pc5,
             ..
         } = peripherals.pins;
         Some(Self {
@@ -42,6 +64,9 @@ impl BoardResources {
                 cf1: pb6,
                 sel: pb7,
             },
+            flash: OnboardFlash(()),
+            adc: peripherals.adc,
+            flash_voltage_pin: pc5,
         })
     }
 
@@ -78,34 +103,81 @@ impl BoardResources {
 
     #[cfg(target_arch = "tc32")]
     pub fn set_relay(&self, on: bool) {
-        tlsr8258_hal::gpio::write(&self.relay, on);
+        set_relay(&self.relay, on);
     }
 
     #[cfg(target_arch = "tc32")]
     pub fn set_led(&self, index: usize, on: bool) {
-        if let Some(led) = self.leds.get(index) {
-            tlsr8258_hal::gpio::write(led, on);
-        }
+        set_led(&self.leds, index, on);
     }
 
     #[cfg(target_arch = "tc32")]
     pub fn set_sel_high(&self, high: bool) {
-        tlsr8258_hal::gpio::write(&self.metering.sel, high);
+        set_sel_high(&self.metering.sel, high);
     }
 
     #[cfg(target_arch = "tc32")]
     pub fn button_pressed(&self) -> bool {
-        tlsr8258_hal::gpio::read(&self.button)
+        button_pressed(&self.button)
     }
+}
+
+/// Free-function equivalents of the `BoardResources` inherent methods
+/// above, taking the owned [`Pin`]s directly instead of `&BoardResources`.
+///
+/// Firmware that has moved `BoardResources::flash`/`metering` out of a
+/// `BoardResources` value (each is consumed exactly once, by
+/// persistence/metering-task setup) cannot keep borrowing the whole
+/// struct afterward — Rust rejects `&resources` once any field has been
+/// partially moved out of it. Destructuring `BoardResources` once into
+/// its individual owned fields and driving them through these free
+/// functions avoids that without duplicating this crate's pin-polarity
+/// knowledge back into firmware code. Each `Pin`/array is still a single,
+/// uniquely-owned value — these functions do not weaken or duplicate the
+/// ownership `BoardResources::take()` already established, they just let
+/// it be exercised after a one-time destructure instead of only through
+/// `&self` methods.
+#[cfg(target_arch = "tc32")]
+pub fn set_relay(relay: &Pin, on: bool) {
+    tlsr8258_hal::gpio::write(relay, on);
+}
+
+#[cfg(target_arch = "tc32")]
+pub fn set_led(leds: &[Pin; 3], index: usize, on: bool) {
+    if let Some(led) = leds.get(index) {
+        tlsr8258_hal::gpio::write(led, on);
+    }
+}
+
+#[cfg(target_arch = "tc32")]
+pub fn set_sel_high(sel: &Pin, high: bool) {
+    tlsr8258_hal::gpio::write(sel, high);
+}
+
+#[cfg(target_arch = "tc32")]
+pub fn button_pressed(button: &Pin) -> bool {
+    tlsr8258_hal::gpio::read(button)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::mem::size_of;
 
     #[test]
     fn profile_remains_explicitly_legacy() {
         assert_eq!(PROFILE.name, "legacy-bl0937-pd6");
         assert_eq!(PROFILE.leds.len(), 3);
+    }
+
+    #[test]
+    fn onboard_flash_token_is_zero_sized() {
+        assert_eq!(size_of::<OnboardFlash>(), 0);
+    }
+
+    #[test]
+    fn board_resources_are_single_take() {
+        assert!(BoardResources::take().is_some());
+        assert!(BoardResources::take().is_none());
     }
 }

@@ -1,5 +1,8 @@
 #![no_std]
 
+#[cfg(target_arch = "tc32")]
+pub mod storage;
+
 use zigbee_plug_hardware::{Evidence, LEGACY_BL0937_PD6, ProductProfile, TLSR8258_1M_LAYOUT};
 
 pub const PRODUCT: ProductProfile = ProductProfile {

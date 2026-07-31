@@ -153,16 +153,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
-name = "mock-smart-plug"
-version = "0.1.0-alpha.1"
-dependencies = [
- "bl0942",
- "zigbee-plug-core",
- "zigbee-plug-profile",
- "zigbee-runtime",
-]
-
-[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -197,6 +187,37 @@ dependencies = [
  "tlsr8258-hal",
  "zigbee-plug-hardware",
 ]
+
+[[package]]
+name = "tlsr8258-plug"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "bl0937",
+ "bl0942",
+ "legacy-bl0937-pd6",
+ "tlsr8258-hal",
+ "tlsr8258-legacy-bl0937",
+ "tlsr8258-rt",
+ "tlsr8258-ts011f-bl0942",
+ "tz3000-gjnozsaz-1m",
+ "tz3000-gjnozsaz-512k",
+ "tz3000-w0qqde0g",
+ "tz3000-zloso4jk",
+ "zigbee-mac",
+ "zigbee-nwk",
+ "zigbee-plug-controller",
+ "zigbee-plug-core",
+ "zigbee-plug-profile",
+ "zigbee-plug-storage",
+ "zigbee-runtime",
+ "zigbee-types",
+ "zigbee-zcl",
+]
+
+[[package]]
+name = "tlsr8258-rt"
+version = "0.1.0"
+source = "git+https://github.com/faronov/zigbee-rs.git?rev=0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f#0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f"
 
 [[package]]
 name = "tlsr8258-ts011f-bl0942"
@@ -299,6 +320,7 @@ source = "git+https://github.com/faronov/zigbee-rs.git?rev=0a1ec9e159dbd7cf9be6e
 dependencies = [
  "heapless",
  "log",
+ "tlsr8258-hal",
  "zigbee-types",
 ]
 
@@ -320,7 +342,6 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "zigbee-plug-core",
  "zigbee-plug-profile",
- "zigbee-runtime",
 ]
 
 [[package]]

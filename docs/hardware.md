@@ -44,3 +44,14 @@ dump, and physical inspection establish a real product identity.
 `_TZ3210_w0qqde0g` has community reports of compatibility with the BL0942
 board but is not promoted to a supported target. `_TZ3210_cehuw1lw` has no
 verified metering IC or pin map.
+
+## Flash geometry
+
+Both flash sizes share the same firmware/application-NV/security-journal
+boundaries; only the factory-data region (and, on 1 MiB parts, an unproven
+candidate energy-journal region) moves. See
+`zigbee_plug_hardware::{TLSR8258_512K_LAYOUT, TLSR8258_1M_LAYOUT}` for the
+authoritative addresses, `zigbee-plug-storage` for the type-safe flash-access
+mechanism built on them, and `link/README.md` for the matching canonical
+linker scripts. All five layouts compile and link; none has been verified
+against a real TLSR8258 plug flash chip.

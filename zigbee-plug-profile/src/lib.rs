@@ -65,6 +65,32 @@ impl ZigbeePlug {
         self.inner.is_on()
     }
 
+    /// Invoke the On/Off cluster's own Toggle command locally, exactly as a
+    /// network client's ZCL Toggle command would (see
+    /// [`zigbee_zcl::clusters::on_off::CMD_TOGGLE`]). Used by a local
+    /// button press so the physical control and a remote ZHA client always
+    /// observe the same command semantics.
+    pub fn local_toggle(&mut self) {
+        use zigbee_zcl::clusters::Cluster;
+        use zigbee_zcl::clusters::on_off::CMD_TOGGLE;
+        let _ = self.inner.on_off_mut().handle_command(CMD_TOGGLE, &[]);
+    }
+
+    /// Force the On/Off attribute directly, as the cluster's own On/Off
+    /// command would, without waiting for a network frame.
+    ///
+    /// This is how the controller crate enforces that the OnOff attribute
+    /// never claims "on" while `zigbee_plug_core::ProtectionEngine` has an
+    /// active trip: it calls `local_set_on(false)` so the ZCL-visible state
+    /// always matches the de-energized relay, instead of leaving a stale
+    /// "on" attribute that a client already believes took effect.
+    pub fn local_set_on(&mut self, on: bool) {
+        use zigbee_zcl::clusters::Cluster;
+        use zigbee_zcl::clusters::on_off::{CMD_OFF, CMD_ON};
+        let command = if on { CMD_ON } else { CMD_OFF };
+        let _ = self.inner.on_off_mut().handle_command(command, &[]);
+    }
+
     pub fn tick_on_off(&mut self) {
         self.inner.tick_on_off();
     }
@@ -158,5 +184,26 @@ mod tests {
     fn negative_power_rounds_away_from_zero() {
         assert_eq!(milliwatts_to_watts(-1_500), -2);
         assert_eq!(milliwatts_to_watts(1_500), 2);
+    }
+
+    #[test]
+    fn local_toggle_matches_a_network_toggle_command() {
+        let mut profile = ZigbeePlug::new(SmartPlugReporting::default()).unwrap();
+        assert!(!profile.is_on());
+        profile.local_toggle();
+        assert!(profile.is_on());
+        profile.local_toggle();
+        assert!(!profile.is_on());
+    }
+
+    #[test]
+    fn local_set_on_forces_the_attribute_regardless_of_current_state() {
+        let mut profile = ZigbeePlug::new(SmartPlugReporting::default()).unwrap();
+        profile.local_set_on(true);
+        assert!(profile.is_on());
+        profile.local_set_on(true);
+        assert!(profile.is_on());
+        profile.local_set_on(false);
+        assert!(!profile.is_on());
     }
 }

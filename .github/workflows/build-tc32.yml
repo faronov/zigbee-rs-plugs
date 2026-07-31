@@ -1,0 +1,119 @@
+name: Build TLSR8258 (tc32)
+
+# Matrix-builds every one of `firmware/tlsr8258-plug`'s five product
+# features against the modern-tc32 toolchain, using this repository's own
+# `scripts/tlsr8258-firmware.sh` for the build and its post-link
+# partition/RAM/cache/RF-DMA layout check. Every artifact this workflow
+# uploads is EXPERIMENTAL: no image built here has been run on TLSR8258
+# hardware (see docs/safety.md) — this workflow never flashes a device and
+# has no `flash` job.
+#
+# Host CI (`.github/workflows/ci.yml`) is a separate workflow and is not
+# affected by this one: `firmware/tlsr8258-plug` stays excluded from the
+# root workspace (see the root `Cargo.toml`'s `exclude` comment), so this
+# job's tc32 cross-build can never influence `cargo build/test/clippy/doc
+# --workspace`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "firmware/tlsr8258-plug/**"
+      - "link/**"
+      - "scripts/tlsr8258-firmware.sh"
+      - "boards/**"
+      - "products/**"
+      - "drivers/**"
+      - "plug-core/**"
+      - "plug-storage/**"
+      - "plug-controller/**"
+      - "zigbee-plug-profile/**"
+      - ".github/workflows/build-tc32.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "firmware/tlsr8258-plug/**"
+      - "link/**"
+      - "scripts/tlsr8258-firmware.sh"
+      - "boards/**"
+      - "products/**"
+      - "drivers/**"
+      - "plug-core/**"
+      - "plug-storage/**"
+      - "plug-controller/**"
+      - "zigbee-plug-profile/**"
+      - ".github/workflows/build-tc32.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tc32-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Same modern-tc32 toolchain release this repository's
+  # `scripts/tlsr8258-firmware.sh` (and zigbee-rs's own tc32 CI) build
+  # against.
+  TC32_TOOLCHAIN_URL: https://github.com/modern-tc32/rust/releases/download/tc32-stage2-tc32-45/tc32-rust-toolchain-linux-amd64.tar.gz
+  TC32_TOOLCHAIN_DIR: ${{ github.workspace }}/.toolchains/tc32-stage2-tc32-45
+
+jobs:
+  build:
+    name: ${{ matrix.feature }} (${{ matrix.layout }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - feature: tz3000-gjnozsaz-1m
+            layout: 1m
+          - feature: tz3000-gjnozsaz-512k
+            layout: 512k
+          - feature: tz3000-w0qqde0g
+            layout: 1m
+          - feature: tz3000-zloso4jk
+            layout: 1m
+          - feature: legacy-bl0937-pd6
+            layout: 1m
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install tc32-45 toolchain
+        run: |
+          mkdir -p "$TC32_TOOLCHAIN_DIR"
+          curl -fL --retry 3 "$TC32_TOOLCHAIN_URL" -o /tmp/tc32.tar.gz
+          tar -xzf /tmp/tc32.tar.gz --strip-components=1 -C "$TC32_TOOLCHAIN_DIR"
+          "$TC32_TOOLCHAIN_DIR/bin/rustc" --version --verbose
+
+      - name: Cache tc32 build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/tc32-unknown-none-elf
+          key: tc32-45-${{ matrix.feature }}-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', 'firmware/tlsr8258-plug/Cargo.toml', 'link/*.x') }}
+
+      - name: Build and layout-check (EXPERIMENTAL, not hardware-proven)
+        run: |
+          ./scripts/tlsr8258-firmware.sh build \
+            firmware/tlsr8258-plug tlsr8258-plug \
+            "${{ matrix.layout }}" "${{ matrix.feature }}"
+
+      - name: Rename artifact by product slug
+        run: |
+          mkdir -p target/tlsr8258-artifacts
+          cp "target/tc32-unknown-none-elf/release/tlsr8258-plug.bin" \
+            "target/tlsr8258-artifacts/tlsr8258-plug-${{ matrix.feature }}.bin"
+
+      - name: Upload experimental firmware image
+        uses: actions/upload-artifact@v4
+        with:
+          name: tlsr8258-plug-${{ matrix.feature }}-${{ github.sha }}
+          path: target/tlsr8258-artifacts/*.bin
+          if-no-files-found: error
+          retention-days: 30

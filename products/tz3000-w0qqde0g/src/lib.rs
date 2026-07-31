@@ -1,5 +1,8 @@
 #![no_std]
 
+#[cfg(target_arch = "tc32")]
+pub mod storage;
+
 use zigbee_plug_hardware::{
     Evidence, ProductProfile, StockOtaFingerprint, TLSR8258_1M_LAYOUT, TS011F_BL0942_PC2,
 };
