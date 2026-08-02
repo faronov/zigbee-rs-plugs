@@ -2,11 +2,14 @@ name: Build TLSR8258 (tc32)
 
 # Matrix-builds every one of `firmware/tlsr8258-plug`'s five product
 # features against the modern-tc32 toolchain, using this repository's own
-# `scripts/tlsr8258-firmware.sh` for the build and its post-link
-# partition/RAM/cache/RF-DMA layout check. Every artifact this workflow
-# uploads is EXPERIMENTAL: no image built here has been run on TLSR8258
-# hardware (see docs/safety.md) — this workflow never flashes a device and
-# has no `flash` job.
+# `scripts/tlsr8258-firmware.sh` for the build, its post-link
+# partition/RAM/cache/RF-DMA layout check, the typed-`Router` symbol gate
+# (parent path present; End Device Timeout client + EndDevice/RelayRouter
+# roles absent), and the per-product `*.size.json` (image size, app-NV
+# budget, headroom, sha256). Every artifact this workflow uploads is
+# EXPERIMENTAL: no image built here has been run on TLSR8258 hardware (see
+# docs/safety.md) — this workflow never flashes a device and has no `flash`
+# job.
 #
 # Host CI (`.github/workflows/ci.yml`) is a separate workflow and is not
 # affected by this one: `firmware/tlsr8258-plug` stays excluded from the
@@ -98,22 +101,31 @@ jobs:
             target/tc32-unknown-none-elf
           key: tc32-45-${{ matrix.feature }}-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', 'firmware/tlsr8258-plug/Cargo.toml', 'link/*.x') }}
 
-      - name: Build and layout-check (EXPERIMENTAL, not hardware-proven)
+      - name: Build, layout + symbol gate, size metadata (EXPERIMENTAL, not hardware-proven)
         run: |
           ./scripts/tlsr8258-firmware.sh build \
             firmware/tlsr8258-plug tlsr8258-plug \
             "${{ matrix.layout }}" "${{ matrix.feature }}"
 
-      - name: Rename artifact by product slug
+      - name: Rename artifacts by product slug
         run: |
           mkdir -p target/tlsr8258-artifacts
           cp "target/tc32-unknown-none-elf/release/tlsr8258-plug.bin" \
             "target/tlsr8258-artifacts/tlsr8258-plug-${{ matrix.feature }}.bin"
+          # Size/budget/headroom + sha256 metadata emitted by the build
+          # script's layout check (EXPERIMENTAL — see docs/safety.md).
+          cp "target/tc32-unknown-none-elf/release/tlsr8258-plug.size.json" \
+            "target/tlsr8258-artifacts/tlsr8258-plug-${{ matrix.feature }}.size.json"
+          echo "::group::${{ matrix.feature }} size.json"
+          cat "target/tlsr8258-artifacts/tlsr8258-plug-${{ matrix.feature }}.size.json"
+          echo "::endgroup::"
 
-      - name: Upload experimental firmware image
+      - name: Upload experimental firmware image + size metadata
         uses: actions/upload-artifact@v4
         with:
           name: tlsr8258-plug-${{ matrix.feature }}-${{ github.sha }}
-          path: target/tlsr8258-artifacts/*.bin
+          path: |
+            target/tlsr8258-artifacts/*.bin
+            target/tlsr8258-artifacts/*.size.json
           if-no-files-found: error
           retention-days: 30

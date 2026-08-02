@@ -91,19 +91,41 @@ by `scripts/tlsr8258-firmware.sh` to point at an explicit, already-staged
 script).
 
 See `.github/workflows/build-tc32.yml` for the 5-way product matrix CI that
-exercises this crate's full build/layout-check path (host CI in `ci.yml` is
-unaffected, since this crate stays workspace-excluded), and
-`firmware/tlsr8258-plug/README.md`'s "Hardware gates" section for the
-remaining physical validation boundary.
+exercises this crate's full build / layout-check / symbol-gate / size-report
+path (host CI in `ci.yml` is unaffected, since this crate stays
+workspace-excluded), and `firmware/tlsr8258-plug/README.md`'s "Hardware
+gates" section for the remaining physical validation boundary.
 
 
 ## Upstream dependency
 
 All `zigbee-rs` crates are pinned to commit
-`0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f`. The pin includes calibrated
+`fd3d13f258a082149f8d77245ef4ebffdef0bdea`. The pin includes calibrated
 Electrical Measurement scaling, restoration of the 48-bit Simple Metering
-energy counter, and the complete reusable TLSR8258 HAL consumed by the
-firmware.
+energy counter, the complete reusable TLSR8258 HAL consumed by the firmware,
+and the typed device-role model (`zigbee_runtime::role`).
+
+**Typed `Router` role.** A mains-powered plug is a genuine parent
+`Router`, so both router loops name the `zigbee_runtime::role::Router` role
+(`ZigbeeDevice<TelinkMac, Router>`) and construct it through
+`DeviceBuilder::build_router_into` — bounded on `zigbee_mac::ParentMacDriver`,
+which `TelinkMac` implements — never the default leaf `EndDevice` or the
+forwarding-only `RelayRouter`. Upstream splits each role's runtime by static
+dispatch: a `Router` monomorphization links the parent/child-serving path and
+holds `ParentState`, while the R22 End Device Timeout **client** lifecycle is
+owned exclusively by `EndDevice` and is therefore never compiled into these
+images. The shared helpers (`router_support::apply_stack_event`,
+`ZigbeePlug::configure_default_reporting`) stay generic over the role `R` so
+host tests can still exercise the profile through other roles, matching the
+upstream reference loop's own role-generic signatures.
+
+**`default-features = false`.** `zigbee-zcl` and `zigbee-runtime` are pulled
+with `default-features = false, features = ["router"]`, dropping the upstream
+`float32`/`float64` ZCL codec: every smart-plug electrical/metering attribute
+is integer-scaled, so the float codec is dead weight here. This mirrors
+zigbee-rs's own `examples/telink-tlsr8258-router` wiring. `constrained-memory`
+is deliberately **not** enabled — a mains-powered parent router must not shrink
+any child/route/neighbour table to save flash.
 
 BL0942's raw `CF_CNT` is only 24 bits. Firmware must pass it through
 `bl0942::EnergyTracker`, persist `total_uwh` in an `EnergyRecord`, and restore
@@ -158,9 +180,16 @@ product instead of one per product, and how a future firmware crate's
 `scripts/tlsr8258-firmware.sh` is a host-side build/check helper (no `flash`
 subcommand) that stages the selected canonical script, builds with bounded
 release flags, and independently re-verifies the same boundaries plus the
-RAM/cache/RF-DMA symbols from the produced ELF via `llvm-nm`. All five
-product features have been compiled, linked, converted to `.bin`, and
-layout-checked with the modern-tc32 toolchain. Host tests additionally cover
+RAM/cache/RF-DMA symbols from the produced ELF via `llvm-nm`. It also runs a
+typed-`Router` **symbol gate** on the linked ELF — asserting the parent path
+is present (`zigbee_runtime::role::Router`, `handle_child_rejoin_request`,
+`nlme_start_router`) and that no leaf/relay code leaked in (the `EndDevice`/
+`RelayRouter` roles and every End Device Timeout *client* method are absent) —
+and writes a per-product `*.size.json` (image size, the app-NV-start budget,
+remaining headroom, partition addresses, and the `.bin` sha256) that
+`build-tc32.yml` uploads alongside each image. All five product features have
+been compiled, linked, converted to `.bin`, layout-checked, symbol-gated, and
+size-reported with the modern-tc32 toolchain. Host tests additionally cover
 the storage token split and bounds arithmetic. Physical flash writes,
 security-counter durability, and journal rollover remain hardware gates.
 

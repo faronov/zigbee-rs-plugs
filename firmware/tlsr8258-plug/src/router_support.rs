@@ -4,7 +4,7 @@
 //! Kept intentionally minimal: the two board types differ in LED count and
 //! metering peripherals, so the full board/product/task wiring stays in
 //! each app module. This module only shares what generalizes over any
-//! `ZigbeeNode<M, S, P>`, matching `zigbee-rs`'s own
+//! `ZigbeeNode<M, S, P, R>`, matching `zigbee-rs`'s own
 //! `examples/telink-tlsr8258-router` reference loop's event handling
 //! exactly (this is not a new policy — it is the proven reference's own
 //! `apply_stack_event`/`LoopControl`, copied because it is shared, not
@@ -16,6 +16,7 @@ use zigbee_mac::telink::TelinkMac;
 use zigbee_runtime::event_loop::{StackEvent, StartError};
 use zigbee_runtime::node::ZigbeeNode;
 use zigbee_runtime::profile::ApplicationProfile;
+use zigbee_runtime::role::DeviceRole;
 use zigbee_runtime::security_store::SecurityStateStore;
 
 /// Construct a [`TelinkMac`] from the product's declared flash capacity,
@@ -141,14 +142,21 @@ pub enum LoopControl {
 /// Apply one stack event's required side effect (secure rejoin, leave/
 /// factory reset, or falling back to recommissioning for every other
 /// network-loss event).
-pub async fn apply_stack_event<M, S, P>(
-    node: &mut ZigbeeNode<'_, M, S, P>,
+///
+/// Role-generic over `R` (see [`zigbee_runtime::role`]): a plug image only
+/// ever instantiates this for [`zigbee_runtime::role::Router`], but keeping
+/// the bound at [`DeviceRole`] matches the upstream reference loop's own
+/// role-generic `apply_stack_event` and avoids baking the parent role into
+/// this shared helper.
+pub async fn apply_stack_event<M, S, P, R>(
+    node: &mut ZigbeeNode<'_, M, S, P, R>,
     event: StackEvent,
 ) -> LoopControl
 where
     M: MacDriver,
     S: SecurityStateStore,
     P: ApplicationProfile,
+    R: DeviceRole,
 {
     match event {
         StackEvent::RejoinRequested => match node.secure_rejoin().await {

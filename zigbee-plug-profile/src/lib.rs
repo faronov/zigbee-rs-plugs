@@ -10,6 +10,7 @@ use zigbee_runtime::profile::{
     ApplicationClusters, DeviceProfile, ProfileComponent, ProfileError, SmartPlug,
     SmartPlugReporting,
 };
+use zigbee_runtime::role::DeviceRole;
 use zigbee_zcl::clusters::electrical::AcScaling;
 use zigbee_zcl::clusters::metering::UNIT_KWH;
 use zigbee_zcl::{DeviceId, ZclStatus};
@@ -125,10 +126,16 @@ impl ProfileComponent for ZigbeePlug {
         self.inner.expected_report_clusters()
     }
 
-    fn configure_default_reporting<M: MacDriver>(
+    // `ZigbeeDevice` is now generic over its logical role `R` (see
+    // `zigbee_runtime::role`); a smart-plug image builds a `Router`, but this
+    // adapter stays role-generic so the same profile can also be reported
+    // through an end-device or relay device in host tests. The forwarded
+    // `SmartPlug::configure_default_reporting` has the identical `<M, R>`
+    // bound upstream.
+    fn configure_default_reporting<M: MacDriver, R: DeviceRole>(
         &self,
         endpoint: u8,
-        device: &mut ZigbeeDevice<M>,
+        device: &mut ZigbeeDevice<M, R>,
     ) -> Result<(), ProfileError> {
         self.inner.configure_default_reporting(endpoint, device)
     }

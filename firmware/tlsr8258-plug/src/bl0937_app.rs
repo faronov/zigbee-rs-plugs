@@ -21,6 +21,7 @@ use zigbee_runtime::event_loop::{StartError, TickResult};
 use zigbee_runtime::node::ZigbeeNode;
 use zigbee_runtime::power::PowerMode;
 use zigbee_runtime::profile::{ApplicationProfile, SmartPlugReporting};
+use zigbee_runtime::role::Router;
 use zigbee_zcl::clusters::basic::PowerSource;
 
 use zigbee_plug_controller::PlugController;
@@ -67,7 +68,11 @@ fn fail(relay: &Pin, leds: &[Pin; 3]) -> ! {
 }
 
 pub fn run() -> ! {
-    type Device = ZigbeeDevice<TelinkMac>;
+    // See `bl0942_app::run`: a mains-powered plug is a genuine parent
+    // `Router` (`zigbee_runtime::role::Router`), constructed through
+    // `build_router_into` on a `ParentMacDriver` backend — not the default
+    // `EndDevice` or a forwarding-only `RelayRouter`.
+    type Device = ZigbeeDevice<TelinkMac, Router>;
 
     let resources = match BoardResources::take() {
         Some(resources) => resources,
@@ -136,7 +141,7 @@ pub fn run() -> ! {
     };
     let mut profile = plug.into_device_profile(ENDPOINT);
 
-    static mut DEVICE_STORAGE: MaybeUninit<ZigbeeDevice<TelinkMac>> = MaybeUninit::uninit();
+    static mut DEVICE_STORAGE: MaybeUninit<Device> = MaybeUninit::uninit();
     let device: &mut Device = ZigbeeDevice::builder(mac)
         .device_type(DeviceType::Router)
         .power_mode(PowerMode::AlwaysOn)
@@ -149,7 +154,7 @@ pub fn run() -> ! {
             profile.device_id(),
             |endpoint| profile.configure_endpoint(endpoint),
         )
-        .build_into(unsafe { &mut *core::ptr::addr_of_mut!(DEVICE_STORAGE) });
+        .build_router_into(unsafe { &mut *core::ptr::addr_of_mut!(DEVICE_STORAGE) });
 
     if device
         .reset_security_state_if_identity_changed(&mut security_store, ieee_address)

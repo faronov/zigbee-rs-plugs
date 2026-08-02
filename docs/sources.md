@@ -13,7 +13,7 @@ boundaries:
 - BL0942 register protocol:
   [Belling BL0942 V1.06 datasheet](https://www.belling.com.cn/media/file_object/bel_product/BL0942/datasheet/BL0942_V1.06_en.pdf).
 - Zigbee stack and TLSR8258 HAL:
-  [`faronov/zigbee-rs@0a1ec9e`](https://github.com/faronov/zigbee-rs/commit/0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f).
+  [`faronov/zigbee-rs@fd3d13f`](https://github.com/faronov/zigbee-rs/commit/fd3d13f258a082149f8d77245ef4ebffdef0bdea).
 
 No stock OTA identity is treated as permission to flash. Physical PCB
 inspection, a preserved flash dump, JEDEC verification, and a matching product

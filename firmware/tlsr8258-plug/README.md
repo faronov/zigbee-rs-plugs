@@ -57,17 +57,41 @@ flashes hardware and has no `flash` job.
 ## Upstream dependency
 
 The firmware pins all `zigbee-rs` crates to commit
-`0a1ec9e159dbd7cf9be6e97fe1e90d6af96cc98f`. That published revision
+`fd3d13f258a082149f8d77245ef4ebffdef0bdea`. That published revision
 contains the reusable TLSR8258 UART, GPIO capture, ADC, flash geometry,
-voltage guard, IRQ, timer, and router support used here. No local Cargo
-`[patch]` is required.
+voltage guard, IRQ, timer, and router support used here, plus the typed
+device-role model (`zigbee_runtime::role`). No local Cargo `[patch]` is
+required.
+
+Because a mains plug is a genuine parent, every image is built as a typed
+`zigbee_runtime::role::Router` (`ZigbeeDevice<TelinkMac, Router>` via
+`build_router_into`), never the default leaf `EndDevice`. `zigbee-zcl` and
+`zigbee-runtime` use `default-features = false, features = ["router"]` to
+drop the unused `float32`/`float64` ZCL codec (all plug attributes are
+integer-scaled); `constrained-memory` is intentionally left off so no
+parent/child table is shrunk. See `docs/architecture.md` for the full
+rationale.
 
 ## Hardware gates
 
-All five product features compile, link, produce `.bin` files, and pass the
-post-link flash/RAM/cache/RF-DMA checks with the modern-tc32 toolchain.
-Nothing in this crate has run on physical TLSR8258 plug hardware. The open
-gates are therefore:
+All five product features compile, link, produce `.bin` files, pass the
+post-link flash/RAM/cache/RF-DMA checks, pass the typed-`Router` symbol gate
+(parent path present; End Device Timeout client + `EndDevice`/`RelayRouter`
+roles absent), and emit a `*.size.json` size/budget report with the
+modern-tc32 toolchain. Nothing in this crate has run on physical TLSR8258
+plug hardware. The open gates are therefore:
+
+| Product | `59ce930` | `fd3d13f` | Reduction | Current headroom |
+|---|---:|---:|---:|---:|
+| `tz3000-gjnozsaz-1m` | 362,500 B | 346,596 B | 15,904 B | 120,348 B |
+| `tz3000-gjnozsaz-512k` | 362,496 B | 346,592 B | 15,904 B | 120,352 B |
+| `tz3000-w0qqde0g` | 362,500 B | 346,596 B | 15,904 B | 120,348 B |
+| `tz3000-zloso4jk` | 362,500 B | 346,596 B | 15,904 B | 120,348 B |
+| `legacy-bl0937-pd6` | 367,724 B | 351,804 B | 15,920 B | 115,140 B |
+
+The comparison uses the same pinned `tc32-45` toolchain. Most of the reduction
+comes from the typed-role runtime update and compiling out the unused
+`float32`/`float64` ZCL codec; no parent/router table was reduced.
 
 1. preserve and inspect each exact board's original flash;
 2. verify JEDEC geometry and PC5 voltage-sense wiring;
@@ -118,8 +142,12 @@ geometry), `tz3000-gjnozsaz-1m`, `tz3000-w0qqde0g`, `tz3000-zloso4jk`, and
 `legacy-bl0937-pd6` (all 1 MiB geometry) — build reproducibly against the
 pinned upstream commit via
 `scripts/tlsr8258-firmware.sh build` (compiles, links, `objcopy`s to
-`.bin`, and passes the script's post-link layout/RAM/RF-DMA boundary
-check). The 1 MiB builds' layout-check output
+`.bin`, passes the script's post-link layout/RAM/RF-DMA boundary check and
+the typed-`Router` symbol gate, and writes `*.size.json`). Current image
+sizes are 346,596 B (`tz3000-gjnozsaz-1m`/`-w0qqde0g`/`-zloso4jk`),
+346,592 B (`tz3000-gjnozsaz-512k`), and 351,804 B (`legacy-bl0937-pd6`),
+all well under the app-NV budget at `0x72000` (466,944 B) — at least
+115 KiB of headroom. The 1 MiB builds' layout-check output
 correctly reports `factory_data=[0xFE000..0x100000)`, confirming the
 geometry-aware path resolves the right sector rather than the 512 KiB
 one. This remains a software/build result, not hardware proof.
