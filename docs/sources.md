@@ -13,7 +13,14 @@ boundaries:
 - BL0942 register protocol:
   [Belling BL0942 V1.06 datasheet](https://www.belling.com.cn/media/file_object/bel_product/BL0942/datasheet/BL0942_V1.06_en.pdf).
 - Zigbee stack and TLSR8258 HAL:
-  [`faronov/zigbee-rs@fd3d13f`](https://github.com/faronov/zigbee-rs/commit/fd3d13f258a082149f8d77245ef4ebffdef0bdea).
+  [`faronov/zigbee-rs@b97c749`](https://github.com/faronov/zigbee-rs/commit/b97c749a66799dfafe9096bb16e4893f45519d5e).
+- ZiGate Trust Center authentication fix:
+  [`fairecasoimeme/ZiGate v3.1d...v3.1e`](https://github.com/fairecasoimeme/ZiGate/compare/v3.1d...v3.1e).
+- Zbeacon TS011F BL0937 pin map and 512 KiB geometry: a user-owned full
+  stock flash dump, SHA-256
+  `ede1ab20ae7c05f26de25dcf84e0ed964f3b9da918b431de3ca767c9c243c7cd`.
+  The dump contains live Zigbee identity/security state and is deliberately
+  not included in this repository.
 
 No stock OTA identity is treated as permission to flash. Physical PCB
 inspection, a preserved flash dump, JEDEC verification, and a matching product

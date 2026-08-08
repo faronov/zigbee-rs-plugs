@@ -39,6 +39,73 @@ No trustworthy Tuya manufacturer fingerprint is tied to this map. It remains
 the explicitly named `legacy-bl0937-pd6` target until a PCB marking, flash
 dump, and physical inspection establish a real product identity.
 
+## Zbeacon TS011F BL0937 board
+
+A user-owned complete stock flash dump identifies this as a separate
+`Zbeacon` / `TS011F` 512 KiB product, not the BL0942 UART board:
+
+| Function | TLSR8258 pin | Electrical behavior |
+|---|---|---|
+| Relay | PD2 | active high |
+| Status LED | PB1 | active low |
+| Button | PA0 | active low, 10 kOhm pull-up |
+| BL0937 CF | PB4 | rising-edge pulse input, 10 kOhm pull-up |
+| BL0937 CF1 | PB5 | rising-edge multiplexed pulse input, 10 kOhm pull-up |
+| BL0937 SEL | PD3 | output, stock firmware initializes low |
+
+The stock dump is exactly `0x80000` bytes. Its Telink firmware-length field
+is `0x2DD64` (187,748 bytes), ending exactly at the last non-erased byte.
+The configured factory sectors (`0x76000`/`0x77000`) and NV map also match
+the Telink 512 KiB layout; the true fitted JEDEC capacity still requires a
+live flash-ID read. The `b97c749` Rust image is 366,476 bytes, leaves
+100,468 bytes before application NV at `0x72000`, and has SHA-256
+`dde692569cd541cbefeabdbd5112a3fddcb940b1623a56f71f9da76c89877e7c`.
+
+Useful stock flash regions:
+
+| Range | Stock contents | Replacement consequence |
+|---|---|---|
+| `0x34000..0x3D000` | Zigbee network/security/table NV | overwritten by the larger Rust image; re-pairing is required |
+| `0x40000..0x74000` | erased OTA staging bank | available only after a verified OTA design |
+| `0x74000` sector | metering calibration/protection config | replaced by the Rust security journal |
+| `0x76000` sector | factory EUI-64 | preserved and used unchanged |
+| `0x77000` sector | factory calibration reservation, erased on this unit | preserved |
+| `0x7C000` sector | stock binding/reporting NV | left outside Rust partitions, but lost by a full-chip erase |
+
+The image contains live Zigbee identity/security state and therefore is
+neither stored nor published by this repository.
+
+The stock endpoint is HA profile `0x0104`, Smart Plug device `0x0051`.
+It advertises Basic, Identify, Groups, Scenes, OnOff, Time, Tuya `0xE000`,
+Metering `0x0702`, Electrical Measurement `0x0B04`, and Touchlink `0x1000`
+as inputs, plus OTA `0x0019` as an output. It also exposes standard
+`StartUpOnOff` (`0x4003`) and Tuya child-lock/indicator/startup attributes
+`0x8000..0x8002`; these are useful compatibility targets but are not all
+implemented by the current Rust profile.
+
+The stock app-config sector contains unit-specific BL0937 values:
+
+| Quantity | Float gain | Integer scaler |
+|---|---:|---:|
+| RMS current | 16.162 | 200 |
+| RMS voltage | 39.136 | 5 |
+| Active power | 23.532 | 36 |
+
+Protection limits are 75 V undervoltage, 270 V overvoltage, and 20.5 A
+overcurrent; disassembly confirms each trip opens the relay. The Zbeacon
+product now supplies these three thresholds to the Rust protection engine.
+The recovered stock record contains no power threshold, so the product
+disables the generic 3.68 kW limit rather than inventing one. The 5 s trip
+delay and disabled voltage auto-restart remain Rust policy because the stock
+debounce/restart timing has not been recovered.
+
+The Rust product now converts the exact stock gain/scaler bit patterns into
+fixed-point `bl0937::Scale` values without linking soft-float code. It also
+uses the statically recovered SEL mapping (`HIGH = voltage`, `LOW = current`)
+and derives `2,353,211` CF pulses/kWh from the stock power gain. Metering
+remains experimental until SEL timing and all three quantities are checked
+against the physical PCB and a known load.
+
 ## Candidate models
 
 `_TZ3210_w0qqde0g` has community reports of compatibility with the BL0942
@@ -53,5 +120,5 @@ candidate energy-journal region) moves. See
 `zigbee_plug_hardware::{TLSR8258_512K_LAYOUT, TLSR8258_1M_LAYOUT}` for the
 authoritative addresses, `zigbee-plug-storage` for the type-safe flash-access
 mechanism built on them, and `link/README.md` for the matching canonical
-linker scripts. All five layouts compile and link; none has been verified
+linker scripts. All six product targets compile and link; none has been verified
 against a real TLSR8258 plug flash chip.

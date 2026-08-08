@@ -8,14 +8,11 @@
 //!
 //! # Calibration
 //!
-//! Uses [`bl0937::Calibration::from_components`] with this repository's
-//! documented reference component values (see [`REFERENCE_CALIBRATION`]).
-//! This is **uncalibrated/experimental**: it has not been verified against
-//! a known load on real BL0937 hardware from this crate, and the exact
-//! shunt/divider values fitted to any specific legacy board are not
-//! independently confirmed here. Treat every voltage/current/power/energy
-//! value this task produces as indicative only, never as an accurate
-//! hardware measurement, until a specific board is measured.
+//! Calibration and SEL polarity are supplied by the compile-time product
+//! selection. The Zbeacon product uses the gain/scaler record recovered from
+//! its stock flash; the legacy product retains the repository's reference
+//! component calibration. Neither should be treated as production-calibrated
+//! until checked against a known load on its physical board.
 //!
 //! # Fail-safe overflow handling
 //!
@@ -54,15 +51,6 @@ const MAX_EVENTS_PER_POLL: u16 = 256;
 /// Switch CF1 between current- and voltage-sensing every two 1 s windows —
 /// the same cadence exercised by this repository's `bl0937` driver tests.
 const WINDOWS_PER_MODE: u8 = 2;
-
-/// Reference component values for the "common 1 mOhm shunt, 2.351x mains
-/// voltage divider" board family documented in `bl0937`'s own
-/// `Calibration::from_components` example, and this crate's `README.md`.
-/// See the module docs' calibration caveat: this is not a per-unit
-/// verified calibration.
-const SHUNT_MICROOHMS: u32 = 1_000;
-const VOLTAGE_DIVIDER_MILLI: u32 = 2_351_000;
-const CF_PULSES_PER_KWH: u32 = 3_200;
 
 /// This poll's result. Never blocks; the caller decides what to do next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,23 +96,20 @@ impl Bl0937Task {
     /// `BoardResources::initialize_safe` before this call — this task only
     /// drives `sel`'s level going forward, it does not itself configure
     /// its output-enable/function mux.
-    pub fn new(cf: Pin, cf1: Pin, sel: Pin) -> Result<Self, CaptureError> {
+    pub fn new(
+        cf: Pin,
+        cf1: Pin,
+        sel: Pin,
+        calibration: Calibration,
+        sel_polarity: SelPolarity,
+    ) -> Result<Self, CaptureError> {
         capture::configure_channel(CHANNEL_CF, &cf, GpioIrqSource::Primary)?;
         capture::configure_channel(CHANNEL_CF1, &cf1, GpioIrqSource::Risc0)?;
 
-        let calibration = reference_calibration();
-        // `SelPolarity::HighIsCurrent` is an assumption, not a confirmed
-        // hardware fact for any specific board: this repository has no
-        // independently verified SEL polarity for the legacy BL0937 route
-        // (see the module docs' calibration caveat). Getting this wrong
-        // only swaps which of `current_ma`/`voltage_mv` is refreshed in
-        // which window — `Bl0937Task::sample_from_result` still produces a
-        // well-typed sample either way — but the resulting values should
-        // not be trusted as calibrated until confirmed on real hardware.
         let driver = Bl0937::new(
             calibration,
             MeasurementMode::Current,
-            SelPolarity::HighIsCurrent,
+            sel_polarity,
             WINDOWS_PER_MODE,
         )
         .expect("WINDOWS_PER_MODE >= 2");
@@ -234,11 +219,6 @@ impl Bl0937Task {
             }
         }
     }
-}
-
-fn reference_calibration() -> Calibration {
-    Calibration::from_components(SHUNT_MICROOHMS, VOLTAGE_DIVIDER_MILLI, CF_PULSES_PER_KWH)
-        .expect("reference component constants are nonzero and fit u64 arithmetic")
 }
 
 fn clamp_u32(value: u64) -> u32 {

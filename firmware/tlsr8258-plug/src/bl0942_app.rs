@@ -222,6 +222,13 @@ pub fn run() -> ! {
             match start_result {
                 Ok(_) => break,
                 Err(StartError::CommissioningFailed(_)) => {
+                    let announce_exhausted = node
+                        .device()
+                        .steering_diagnostics()
+                        .device_annce_exhausted();
+                    if announce_exhausted && tlsr8258_rt::block_on(node.factory_reset()).is_err() {
+                        fail(&relay, &led);
+                    }
                     tlsr8258_hal::timer::sleep_ticks(tlsr8258_hal::timer::ms(retry_delay_ms));
                     clock.update(timer::now_ticks());
                     retry_delay_ms = retry_delay_ms.saturating_mul(2).min(JOIN_RETRY_MAX_MS);

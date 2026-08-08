@@ -1,12 +1,11 @@
-//! Production TLSR8258 smart-plug router loop for the legacy BL0937-metered
-//! product (`legacy-bl0937-pd6`).
+//! Production TLSR8258 smart-plug router loop for BL0937-metered products.
 //!
 //! Mirrors [`crate::bl0942_app`]'s structure — persistent `ZigbeeNode`,
 //! MainsSinglePhase power source, endpoint 1 MAINS_POWER_OUTLET,
 //! start/resume/recommission handling, default reporting, radio-first
-//! combined ISR (`main.rs`) — but drives three status LEDs instead of one
-//! and polls [`crate::bl0937_task::Bl0937Task`]'s fixed 1 s pulse-capture
-//! windows instead of a UART stream.
+//! combined ISR (`main.rs`) — but polls
+//! [`crate::bl0937_task::Bl0937Task`]'s fixed 1 s pulse-capture windows
+//! instead of a UART stream.
 //!
 //! EXPERIMENTAL: not run on TLSR8258 hardware. See this crate's `README.md`
 //! and `bl0937_task`'s module docs for the uncalibrated/experimental
@@ -28,21 +27,26 @@ use zigbee_plug_controller::PlugController;
 use zigbee_plug_core::{PlugSettings, ProtectionConfig, TickMillis};
 use zigbee_plug_profile::ZigbeePlug;
 
+use bl0937::{Calibration, SelPolarity};
 use tlsr8258_hal::gpio::Pin;
 use tlsr8258_hal::timer;
-use tlsr8258_legacy_bl0937::BoardResources;
+
+use board::BoardResources;
+#[cfg(feature = "legacy-bl0937-pd6")]
+use tlsr8258_legacy_bl0937 as board;
+#[cfg(feature = "zbeacon-ts011f-512k")]
+use tlsr8258_zbeacon_ts011f_bl0937 as board;
 
 use crate::bl0937_task::{self, Bl0937Task};
 use crate::persistence::Checkpoint;
 use crate::router_support::{self, LoopControl};
 
+#[cfg(feature = "legacy-bl0937-pd6")]
 use legacy_bl0937_pd6 as product;
+#[cfg(feature = "zbeacon-ts011f-512k")]
+use zbeacon_ts011f_512k as product;
 
 const ENDPOINT: u8 = 1;
-/// Status LED shown solid on fatal failure (see [`fail`]). Index 0 is this
-/// board's primary/red status LED (`BoardResources::leds[0]`, wired to
-/// PD7 — see `tlsr8258-legacy-bl0937`'s pin map).
-const FAIL_LED_INDEX: usize = 0;
 const MAX_RX_SLICE_US: u32 = 20_000;
 const JOIN_RETRY_MIN_MS: u32 = 5_000;
 const JOIN_RETRY_MAX_MS: u32 = 60_000;
@@ -50,18 +54,40 @@ const BUTTON_DEBOUNCE_MS: u32 = 30;
 const ONE_SECOND_TICKS: u32 = timer::TICKS_PER_MS * 1_000;
 const HUNDRED_MS_TICKS: u32 = timer::TICKS_PER_MS * 100;
 
-fn apply_outputs(relay: &Pin, leds: &[Pin; 3], state: zigbee_plug_controller::RelayLedState) {
-    tlsr8258_legacy_bl0937::set_relay(relay, state.relay_on);
-    tlsr8258_legacy_bl0937::set_led(leds, 0, state.led_on);
+#[cfg(feature = "legacy-bl0937-pd6")]
+fn product_metering_config() -> (Calibration, SelPolarity) {
+    let calibration = Calibration::from_components(1_000, 2_351_000, 3_200)
+        .expect("legacy reference component constants are valid");
+    (calibration, SelPolarity::HighIsCurrent)
+}
+
+#[cfg(feature = "zbeacon-ts011f-512k")]
+const fn product_metering_config() -> (Calibration, SelPolarity) {
+    (product::BL0937_CALIBRATION, product::BL0937_SEL_POLARITY)
+}
+
+#[cfg(feature = "legacy-bl0937-pd6")]
+fn product_protection_config() -> ProtectionConfig {
+    ProtectionConfig::default()
+}
+
+#[cfg(feature = "zbeacon-ts011f-512k")]
+const fn product_protection_config() -> ProtectionConfig {
+    product::PROTECTION_CONFIG
+}
+
+fn apply_outputs(relay: &Pin, led: &Pin, state: zigbee_plug_controller::RelayLedState) {
+    board::set_relay(relay, state.relay_on);
+    board::set_led(led, state.led_on);
 }
 
 /// Spin forever with the primary status LED forced on, signaling an
 /// unrecoverable startup or runtime failure. There is no logging transport
 /// on this firmware, so this is the entire diagnostic surface for a fatal
 /// condition.
-fn fail(relay: &Pin, leds: &[Pin; 3]) -> ! {
-    tlsr8258_legacy_bl0937::set_relay(relay, false);
-    tlsr8258_legacy_bl0937::set_led(leds, FAIL_LED_INDEX, true);
+fn fail(relay: &Pin, led: &Pin) -> ! {
+    board::set_relay(relay, false);
+    board::set_led(led, true);
     loop {
         core::hint::spin_loop();
     }
@@ -88,16 +114,17 @@ pub fn run() -> ! {
 
     // One-time full destructure — see `bl0942_app::run`'s equivalent
     // comment for why this must move every field out at once rather than
-    // partially, to keep `relay`/`leds`/`button` usable via
-    // `tlsr8258_legacy_bl0937`'s free functions for the rest of this loop.
+    // partially, to keep `relay`/`led`/`button` usable via the selected
+    // board crate's free functions for the rest of this loop.
     let BoardResources {
         relay,
-        leds,
+        led,
         button,
         metering,
         flash,
         adc,
         flash_voltage_pin,
+        ..
     } = resources;
 
     // See `router_support::mac_for_product`'s doc comment: this uses the
@@ -106,13 +133,13 @@ pub fn run() -> ! {
     // and fails closed (spins with the relay off, LED on) if this
     // product's capacity is unsupported or the fitted flash's JEDEC
     // geometry does not match it — never a fabricated or wrong-sector
-    // identity. This product uses `TLSR8258_1M_LAYOUT`
-    // (`FlashGeometry::MiB1`, factory sector `0xFF000`). No per-product
-    // EUI byte offset is applied.
+    // identity. The selected product supplies either the 512 KiB or 1 MiB
+    // geometry and its matching factory sector. No per-product EUI byte
+    // offset is applied.
     let (mac, ieee_address) = match router_support::mac_for_product(product::PRODUCT.flash.capacity)
     {
         Some(pair) => pair,
-        None => fail(&relay, &leds),
+        None => fail(&relay, &led),
     };
 
     // Install the real Zbit flash-voltage guard before opening/writing any
@@ -126,18 +153,18 @@ pub fn run() -> ! {
         flash_voltage_pin,
         product::PRODUCT.flash.capacity,
     ) {
-        fail(&relay, &leds);
+        fail(&relay, &led);
     }
 
     let (mut app_nv, mut security_store) = match product::storage::open_storage(flash) {
         Ok(pair) => pair,
-        Err(_) => fail(&relay, &leds),
+        Err(_) => fail(&relay, &led),
     };
     let (mut checkpoint, restored) = Checkpoint::restore(&mut app_nv);
 
     let plug = match ZigbeePlug::new(SmartPlugReporting::default()) {
         Ok(plug) => plug,
-        Err(_) => fail(&relay, &leds),
+        Err(_) => fail(&relay, &led),
     };
     let mut profile = plug.into_device_profile(ENDPOINT);
 
@@ -160,22 +187,29 @@ pub fn run() -> ! {
         .reset_security_state_if_identity_changed(&mut security_store, ieee_address)
         .is_err()
     {
-        fail(&relay, &leds);
+        fail(&relay, &led);
     }
 
     let mut node = ZigbeeNode::new(device, &mut security_store, &mut profile);
 
     let mut controller = PlugController::new(
         PlugSettings::default(),
-        ProtectionConfig::default(),
+        product_protection_config(),
         BUTTON_DEBOUNCE_MS,
     );
     let state = controller.apply_startup(node.profile_mut().component_mut(), restored.relay_on);
-    apply_outputs(&relay, &leds, state);
+    apply_outputs(&relay, &led, state);
 
-    let mut metering_task = match Bl0937Task::new(metering.cf, metering.cf1, metering.sel) {
+    let (metering_calibration, sel_polarity) = product_metering_config();
+    let mut metering_task = match Bl0937Task::new(
+        metering.cf,
+        metering.cf1,
+        metering.sel,
+        metering_calibration,
+        sel_polarity,
+    ) {
         Ok(task) => task,
-        Err(_) => fail(&relay, &leds),
+        Err(_) => fail(&relay, &led),
     };
     metering_task.restore_energy_uwh(restored.energy_uwh);
     let mut clock = TickMillis::new(timer::TICKS_PER_MS, timer::now_ticks())
@@ -190,16 +224,23 @@ pub fn run() -> ! {
             match start_result {
                 Ok(_) => break,
                 Err(StartError::CommissioningFailed(_)) => {
+                    let announce_exhausted = node
+                        .device()
+                        .steering_diagnostics()
+                        .device_annce_exhausted();
+                    if announce_exhausted && tlsr8258_rt::block_on(node.factory_reset()).is_err() {
+                        fail(&relay, &led);
+                    }
                     tlsr8258_hal::timer::sleep_ticks(tlsr8258_hal::timer::ms(retry_delay_ms));
                     clock.update(timer::now_ticks());
                     retry_delay_ms = retry_delay_ms.saturating_mul(2).min(JOIN_RETRY_MAX_MS);
                 }
-                Err(_) => fail(&relay, &leds),
+                Err(_) => fail(&relay, &led),
             }
         }
 
         if node.configure_default_reporting().is_err() {
-            fail(&relay, &leds);
+            fail(&relay, &led);
         }
 
         let mut tick_anchor = tlsr8258_hal::timer::now_ticks();
@@ -211,10 +252,10 @@ pub fn run() -> ! {
             match tlsr8258_rt::block_on(node.device_mut().receive_timeout(rx_slice_us)) {
                 Ok(indication) => match tlsr8258_rt::block_on(node.process_incoming(&indication)) {
                     Ok(stack_event) => event = stack_event,
-                    Err(_) => fail(&relay, &leds),
+                    Err(_) => fail(&relay, &led),
                 },
                 Err(MacError::NoData) => {}
-                Err(_) => fail(&relay, &leds),
+                Err(_) => fail(&relay, &led),
             }
 
             if let Some(stack_event) = event {
@@ -224,14 +265,14 @@ pub fn run() -> ! {
                 )) {
                     LoopControl::Continue => {}
                     LoopControl::Recommission => continue 'commission,
-                    LoopControl::Fatal => fail(&relay, &leds),
+                    LoopControl::Fatal => fail(&relay, &led),
                 }
             }
 
             // Reconcile the physical relay/LED after every processed
             // incoming frame, per this firmware's required behavior.
             let state = controller.reconcile(node.profile_mut().component_mut());
-            apply_outputs(&relay, &leds, state);
+            apply_outputs(&relay, &led, state);
 
             let now = tlsr8258_hal::timer::now_ticks();
             let now_ms = clock.update(now);
@@ -257,24 +298,24 @@ pub fn run() -> ! {
                     )) {
                         LoopControl::Continue => {}
                         LoopControl::Recommission => continue 'commission,
-                        LoopControl::Fatal => fail(&relay, &leds),
+                        LoopControl::Fatal => fail(&relay, &led),
                     }
                 }
-                Err(_) => fail(&relay, &leds),
+                Err(_) => fail(&relay, &led),
             }
 
             // Local button: debounce, toggle-or-clear-latch, reconcile.
-            let pressed = tlsr8258_legacy_bl0937::button_pressed(&button);
+            let pressed = board::button_pressed(&button);
             let state =
                 controller.on_button_sample(node.profile_mut().component_mut(), now_ms, pressed);
-            apply_outputs(&relay, &leds, state);
+            apply_outputs(&relay, &led, state);
 
             // ZCL On/Off's mandatory ~100 ms timers, decoupled from the
             // BDB `tick()` cadence above.
             if now.wrapping_sub(hundred_ms_anchor) >= HUNDRED_MS_TICKS {
                 hundred_ms_anchor = hundred_ms_anchor.wrapping_add(HUNDRED_MS_TICKS);
                 let state = controller.tick_100ms(node.profile_mut().component_mut());
-                apply_outputs(&relay, &leds, state);
+                apply_outputs(&relay, &led, state);
             }
 
             // Bounded metering poll; never blocks. `Bl0937Task::poll` uses
@@ -285,7 +326,7 @@ pub fn run() -> ! {
                     let _ =
                         controller.on_sample(node.profile_mut().component_mut(), now_ms, sample);
                     let state = controller.reconcile(node.profile_mut().component_mut());
-                    apply_outputs(&relay, &leds, state);
+                    apply_outputs(&relay, &led, state);
                 }
                 // Fail safe: an overflow-dropped window contributed no
                 // sample. There is no logging transport to otherwise
@@ -311,7 +352,7 @@ pub fn run() -> ! {
                 )
                 .is_err()
             {
-                fail(&relay, &leds);
+                fail(&relay, &led);
             }
         }
     }

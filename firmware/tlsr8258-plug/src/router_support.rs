@@ -1,14 +1,13 @@
 //! Shared commissioning-loop plumbing for both product families' router
 //! loops (`bl0942_app.rs`/`bl0937_app.rs`).
 //!
-//! Kept intentionally minimal: the two board types differ in LED count and
-//! metering peripherals, so the full board/product/task wiring stays in
-//! each app module. This module only shares what generalizes over any
-//! `ZigbeeNode<M, S, P, R>`, matching `zigbee-rs`'s own
-//! `examples/telink-tlsr8258-router` reference loop's event handling
-//! exactly (this is not a new policy — it is the proven reference's own
-//! `apply_stack_event`/`LoopControl`, copied because it is shared, not
-//! reinvented).
+//! Kept intentionally minimal: the board types differ in pins and metering
+//! peripherals, so the full board/product/task wiring stays in each app
+//! module. This module only shares what generalizes over any
+//! `ZigbeeNode<M, S, P, R>`, following `zigbee-rs`'s own
+//! `examples/telink-tlsr8258-router` control flow except that the Basic
+//! cluster's Reset to Factory Defaults event remains distinct from a Zigbee
+//! network factory reset.
 
 use tlsr8258_hal::flash::FlashGeometry;
 use zigbee_mac::MacDriver;
@@ -164,11 +163,14 @@ where
             Err(StartError::PersistenceFailed(_)) => LoopControl::Fatal,
             Err(_) => LoopControl::Recommission,
         },
-        StackEvent::LeaveRequested | StackEvent::FactoryResetRequested => {
-            match node.factory_reset().await {
-                Ok(()) => LoopControl::Recommission,
-                Err(_) => LoopControl::Fatal,
-            }
+        StackEvent::LeaveRequested => match node.factory_reset().await {
+            Ok(()) => LoopControl::Recommission,
+            Err(_) => LoopControl::Fatal,
+        },
+        StackEvent::FactoryResetRequested => {
+            // The Basic cluster already reset its writable attributes.
+            // It must not erase Zigbee network credentials.
+            LoopControl::Continue
         }
         StackEvent::Left | StackEvent::CommissioningComplete { success: false } => {
             LoopControl::Recommission

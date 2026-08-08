@@ -2,11 +2,11 @@
 //!
 //! Exactly one product feature selects the firmware image built here (see
 //! the `compile_error!` guards below): four BL0942 products share
-//! [`bl0942_app`]'s router loop and board; the legacy BL0937 product uses
-//! [`bl0937_app`]'s capture-based router loop and its own board. Neither
-//! module is compiled unless its feature is selected, so a given firmware
-//! image only ever links one metering driver, one board crate, and one
-//! product crate.
+//! [`bl0942_app`]'s router loop and board; two incompatible BL0937 products
+//! share [`bl0937_app`]'s capture-based router loop through compile-time
+//! board/product selection. Neither module is compiled unless its feature
+//! is selected, so a given firmware image only ever links one metering
+//! driver, one board crate, and one product crate.
 //!
 //! EXPERIMENTAL: no image built from this crate has been run on TLSR8258
 //! hardware. See `README.md` in this directory and the workspace's
@@ -28,14 +28,15 @@
     feature = "tz3000-w0qqde0g",
     feature = "tz3000-zloso4jk",
     feature = "legacy-bl0937-pd6",
+    feature = "zbeacon-ts011f-512k",
 )))]
 compile_error!(
     "tlsr8258-plug requires exactly one product feature: \
      tz3000-gjnozsaz-1m, tz3000-gjnozsaz-512k, tz3000-w0qqde0g, \
-     tz3000-zloso4jk, or legacy-bl0937-pd6"
+     tz3000-zloso4jk, legacy-bl0937-pd6, or zbeacon-ts011f-512k"
 );
 
-// Two or more features: every pairwise combination of the five is rejected
+// Two or more features: every pairwise combination of the six is rejected
 // explicitly, rather than silently building whichever `#[cfg]` branch the
 // compiler picks first — a multi-feature build must never link two
 // products' worth of persistence/flash-layout assumptions into one image.
@@ -55,16 +56,21 @@ reject_pair!("tz3000-gjnozsaz-1m", "tz3000-gjnozsaz-512k");
 reject_pair!("tz3000-gjnozsaz-1m", "tz3000-w0qqde0g");
 reject_pair!("tz3000-gjnozsaz-1m", "tz3000-zloso4jk");
 reject_pair!("tz3000-gjnozsaz-1m", "legacy-bl0937-pd6");
+reject_pair!("tz3000-gjnozsaz-1m", "zbeacon-ts011f-512k");
 reject_pair!("tz3000-gjnozsaz-512k", "tz3000-w0qqde0g");
 reject_pair!("tz3000-gjnozsaz-512k", "tz3000-zloso4jk");
 reject_pair!("tz3000-gjnozsaz-512k", "legacy-bl0937-pd6");
+reject_pair!("tz3000-gjnozsaz-512k", "zbeacon-ts011f-512k");
 reject_pair!("tz3000-w0qqde0g", "tz3000-zloso4jk");
 reject_pair!("tz3000-w0qqde0g", "legacy-bl0937-pd6");
+reject_pair!("tz3000-w0qqde0g", "zbeacon-ts011f-512k");
 reject_pair!("tz3000-zloso4jk", "legacy-bl0937-pd6");
+reject_pair!("tz3000-zloso4jk", "zbeacon-ts011f-512k");
+reject_pair!("legacy-bl0937-pd6", "zbeacon-ts011f-512k");
 
-#[cfg(feature = "legacy-bl0937-pd6")]
+#[cfg(any(feature = "legacy-bl0937-pd6", feature = "zbeacon-ts011f-512k",))]
 mod bl0937_app;
-#[cfg(feature = "legacy-bl0937-pd6")]
+#[cfg(any(feature = "legacy-bl0937-pd6", feature = "zbeacon-ts011f-512k",))]
 mod bl0937_task;
 #[cfg(any(
     feature = "tz3000-gjnozsaz-1m",
@@ -101,7 +107,7 @@ fn panic_handler(_info: &core::panic::PanicInfo) -> ! {
 #[unsafe(link_section = ".ram_code")]
 pub extern "C" fn irq_handler() {
     tlsr8258_hal::radio::handle_irq();
-    #[cfg(feature = "legacy-bl0937-pd6")]
+    #[cfg(any(feature = "legacy-bl0937-pd6", feature = "zbeacon-ts011f-512k",))]
     tlsr8258_hal::capture::handle_irq();
 }
 
@@ -129,6 +135,6 @@ pub unsafe extern "C" fn _rust_entry() -> ! {
     ))]
     bl0942_app::run();
 
-    #[cfg(feature = "legacy-bl0937-pd6")]
+    #[cfg(any(feature = "legacy-bl0937-pd6", feature = "zbeacon-ts011f-512k",))]
     bl0937_app::run();
 }

@@ -26,7 +26,8 @@ pub struct OnboardFlash(());
 
 pub struct BoardResources {
     pub relay: Pin,
-    pub leds: [Pin; 3],
+    pub led: Pin,
+    pub aux_leds: [Pin; 2],
     pub button: Pin,
     pub metering: Bl0937Pins,
     pub flash: OnboardFlash,
@@ -57,7 +58,8 @@ impl BoardResources {
         } = peripherals.pins;
         Some(Self {
             relay: pd6,
-            leds: [pd7, pd5, pd4],
+            led: pd7,
+            aux_leds: [pd5, pd4],
             button: pd3,
             metering: Bl0937Pins {
                 cf: pb5,
@@ -79,7 +81,7 @@ impl BoardResources {
         gpio::write(&self.relay, false);
         gpio::set_output_enable(&self.relay, true);
 
-        for led in &self.leds {
+        for led in core::iter::once(&self.led).chain(self.aux_leds.iter()) {
             gpio::set_function_gpio(led);
             gpio::write(led, false);
             gpio::set_output_enable(led, true);
@@ -107,8 +109,8 @@ impl BoardResources {
     }
 
     #[cfg(target_arch = "tc32")]
-    pub fn set_led(&self, index: usize, on: bool) {
-        set_led(&self.leds, index, on);
+    pub fn set_led(&self, on: bool) {
+        set_led(&self.led, on);
     }
 
     #[cfg(target_arch = "tc32")]
@@ -143,10 +145,8 @@ pub fn set_relay(relay: &Pin, on: bool) {
 }
 
 #[cfg(target_arch = "tc32")]
-pub fn set_led(leds: &[Pin; 3], index: usize, on: bool) {
-    if let Some(led) = leds.get(index) {
-        tlsr8258_hal::gpio::write(led, on);
-    }
+pub fn set_led(led: &Pin, on: bool) {
+    tlsr8258_hal::gpio::write(led, on);
 }
 
 #[cfg(target_arch = "tc32")]

@@ -40,13 +40,16 @@ fn main() {
     println!("cargo:rustc-link-arg=--gc-sections");
 }
 
-/// Only `tz3000-gjnozsaz-512k` targets the 512 KiB part; every other product
-/// feature targets the 1 MiB part (see `link/README.md`'s product table).
+/// `tz3000-gjnozsaz-512k` and `zbeacon-ts011f-512k` target the 512 KiB part;
+/// every other product feature targets the 1 MiB part (see `link/README.md`'s
+/// product table).
 /// Reads the feature through its `CARGO_FEATURE_*` environment variable
 /// (guaranteed available to build scripts) rather than `cfg!(feature = ..)`,
 /// which is a less common but equivalent idiom in build scripts.
 fn default_script_for_selected_product() -> std::path::PathBuf {
-    let script = if std::env::var_os("CARGO_FEATURE_TZ3000_GJNOZSAZ_512K").is_some() {
+    let script = if std::env::var_os("CARGO_FEATURE_TZ3000_GJNOZSAZ_512K").is_some()
+        || std::env::var_os("CARGO_FEATURE_ZBEACON_TS011F_512K").is_some()
+    {
         "../../link/tlsr8258-512k.x"
     } else {
         "../../link/tlsr8258-1m.x"

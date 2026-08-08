@@ -4,7 +4,7 @@ Two scripts cover every TLSR8258 product in this workspace:
 
 | Script | Flash capacity | Products |
 |---|---|---|
-| `tlsr8258-512k.x` | 512 KiB | `tz3000-gjnozsaz-512k` |
+| `tlsr8258-512k.x` | 512 KiB | `tz3000-gjnozsaz-512k`, `zbeacon-ts011f-512k` |
 | `tlsr8258-1m.x` | 1 MiB | `legacy-bl0937-pd6`, `tz3000-gjnozsaz-1m`, `tz3000-w0qqde0g`, `tz3000-zloso4jk` |
 
 Both scripts carry over the proven TLSR8258 cache/RAM/RF-DMA layout from
@@ -29,12 +29,12 @@ These addresses must stay in sync with
 `zigbee-plug-storage` host tests cross-check every exported partition symbol
 against those Rust constants.
 
-## Why two shared scripts instead of five per-product copies
+## Why two shared scripts instead of six per-product copies
 
 Every TLSR8258 product in this workspace differs only in *which flash size it
 targets*, not in cache/RAM/RF-DMA layout or in the application-NV/security
 partition addresses. Forking a `link/memory.x` per product (as
-`zigbee-rs`'s single-product `products/tlsr8258-tb04` does) would mean five
+`zigbee-rs`'s single-product `products/tlsr8258-tb04` does) would mean six
 near-identical files that can silently drift apart. Keeping exactly one
 script per flash size here, and selecting between them per firmware crate,
 keeps that one source of truth.
@@ -43,9 +43,10 @@ keeps that one source of truth.
 
 `firmware/tlsr8258-plug/build.rs` copies the model-appropriate canonical
 script to `OUT_DIR/memory.x` and adds it to the link search path. It selects
-the 512 KiB script only for `tz3000-gjnozsaz-512k`; the other four product
-features select the 1 MiB script. This mirrors the pattern already proven in
-`zigbee-rs`'s `examples/telink-tlsr8258-radio/build.rs`:
+the 512 KiB script for `tz3000-gjnozsaz-512k` and
+`zbeacon-ts011f-512k`; the other four product features select the 1 MiB
+script. This mirrors the pattern already proven in `zigbee-rs`'s
+`examples/telink-tlsr8258-radio/build.rs`:
 
 ```rust
 fn main() {

@@ -85,6 +85,11 @@ const TS011F_LED: [Output; 1] = [Output {
     active: ActiveLevel::Low,
 }];
 
+const ZBEACON_TS011F_LED: [Output; 1] = [Output {
+    pin: Pin::new(Port::B, 1),
+    active: ActiveLevel::Low,
+}];
+
 pub const LEGACY_BL0937_PD6: BoardProfile = BoardProfile {
     name: "legacy-bl0937-pd6",
     relay: Output {
@@ -123,6 +128,28 @@ pub const TS011F_BL0942_PC2: BoardProfile = BoardProfile {
         uart_tx: Pin::new(Port::B, 1),
         uart_rx: Pin::new(Port::B, 7),
         baud: 4_800,
+    },
+};
+
+pub const ZBEACON_TS011F_BL0937_PD2: BoardProfile = BoardProfile {
+    name: "zbeacon-ts011f-bl0937-pd2",
+    relay: Output {
+        pin: Pin::new(Port::D, 2),
+        active: ActiveLevel::High,
+    },
+    leds: &ZBEACON_TS011F_LED,
+    button: Input {
+        pin: Pin::new(Port::A, 0),
+        active: ActiveLevel::Low,
+        pull_up_ohms: Some(10_000),
+    },
+    metering: MeteringPins::Bl0937 {
+        cf: Pin::new(Port::B, 4),
+        cf1: Pin::new(Port::B, 5),
+        sel: Output {
+            pin: Pin::new(Port::D, 3),
+            active: ActiveLevel::High,
+        },
     },
 };
 
@@ -248,8 +275,16 @@ mod tests {
     #[test]
     fn board_profiles_keep_incompatible_pins_separate() {
         assert_ne!(LEGACY_BL0937_PD6.relay.pin, TS011F_BL0942_PC2.relay.pin);
+        assert_ne!(
+            ZBEACON_TS011F_BL0937_PD2.relay.pin,
+            LEGACY_BL0937_PD6.relay.pin
+        );
         assert!(matches!(
             LEGACY_BL0937_PD6.metering,
+            MeteringPins::Bl0937 { .. }
+        ));
+        assert!(matches!(
+            ZBEACON_TS011F_BL0937_PD2.metering,
             MeteringPins::Bl0937 { .. }
         ));
         assert!(matches!(

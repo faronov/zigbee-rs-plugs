@@ -18,21 +18,21 @@ connections and public chip protocols are used.
   composed into a host-testable `zigbee-plug-controller` (relay/LED
   reconciliation, button debounce/toggle, protection trip/latch, startup
   policy);
-- typed TLSR8258 board resources for the two known incompatible pin maps;
+- typed TLSR8258 board resources for the three known incompatible pin maps;
 - separate product profiles for each known Tuya fingerprint/flash geometry;
 - type-safe, single-split TLSR8258 application-NV and Zigbee security-journal
   flash partitions (`zigbee-plug-storage`), and the canonical 512 KiB/1 MiB
   linker scripts and build/check helper that enforce those boundaries;
 - a `zigbee-rs` Smart Plug profile adapter and host-side example;
 - a `no_std`/`no_main` `firmware/tlsr8258-plug` crate: one binary, exactly
-  one of five compile-time product features, a production router loop
+  one of six compile-time product features, a production router loop
   adapted from `zigbee-rs`'s own `examples/telink-tlsr8258-router`, and the
   BL0942 UART / BL0937 capture metering tasks;
 - a TC32 CI workflow (`.github/workflows/build-tc32.yml`) that matrix-builds
-  all five product features and layout-checks each resulting image;
+  all six product features and layout-checks each resulting image;
 - host tests, Clippy, formatting, and documentation CI.
 
-GitHub Actions builds and uploads five explicitly experimental `.bin`
+GitHub Actions builds and uploads six explicitly experimental `.bin`
 artifacts, but no release or OTA image is published and none has run on
 TLSR8258 hardware. The firmware is pinned to the published `zigbee-rs`
 TLSR8258 HAL revision containing UART, capture, geometry-aware identity, and
@@ -48,6 +48,7 @@ validation, not missing upstream APIs.
 | `tz3000-gjnozsaz-1m` | BL0942, PB1/PB7 UART | 1 MiB | documented board family |
 | `tz3000-gjnozsaz-512k` | BL0942, PB1/PB7 UART | 512 KiB | experimental small-flash variant |
 | `legacy-bl0937-pd6` | BL0937, PB5/PB6/PB7 | assumed 1 MiB | old pin map; Tuya fingerprint unknown |
+| `zbeacon-ts011f-512k` | BL0937, CF PB4 / CF1 PB5 / SEL PD3 | 512 KiB | reverse-engineered stock flash; SEL polarity unverified |
 
 `_TZ3000_gjnozsaz` exists with at least two flash geometries under the same
 manufacturer name. A model string alone is therefore not sufficient to select
@@ -92,7 +93,7 @@ binary against the canonical linker scripts in `link/` using the modern-tc32
 toolchain, given an explicit crate directory, binary name, linker layout, and
 product feature. It never flashes a device — see
 [docs/safety.md](docs/safety.md). `.github/workflows/build-tc32.yml` runs it
-for all five product features on every push/PR touching the firmware crate
+for all six product features on every push/PR touching the firmware crate
 or its dependencies.
 
 Read [docs/safety.md](docs/safety.md) before opening or flashing any mains

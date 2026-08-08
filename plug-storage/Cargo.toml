@@ -11,6 +11,7 @@ embedded-storage.workspace = true
 tlsr8258-hal.workspace = true
 tlsr8258-legacy-bl0937.workspace = true
 tlsr8258-ts011f-bl0942.workspace = true
+tlsr8258-zbeacon-ts011f-bl0937.workspace = true
 zigbee-plug-hardware.workspace = true
 zigbee-runtime.workspace = true
 

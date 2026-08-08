@@ -1,6 +1,6 @@
 name: Build TLSR8258 (tc32)
 
-# Matrix-builds every one of `firmware/tlsr8258-plug`'s five product
+# Matrix-builds every one of `firmware/tlsr8258-plug`'s six product
 # features against the modern-tc32 toolchain, using this repository's own
 # `scripts/tlsr8258-firmware.sh` for the build, its post-link
 # partition/RAM/cache/RF-DMA layout check, the typed-`Router` symbol gate
@@ -81,6 +81,8 @@ jobs:
             layout: 1m
           - feature: legacy-bl0937-pd6
             layout: 1m
+          - feature: zbeacon-ts011f-512k
+            layout: 512k
 
     steps:
       - uses: actions/checkout@v5

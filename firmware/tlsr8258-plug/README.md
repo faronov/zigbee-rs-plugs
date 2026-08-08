@@ -2,7 +2,7 @@
 
 `no_std`/`no_main` TLSR8258 smart-plug firmware: **one binary, exactly one
 compile-time product feature**. See `src/main.rs`'s `compile_error!` guards —
-a build with zero or more than one of the five product features fails at
+a build with zero or more than one of the six product features fails at
 compile time rather than silently picking one or linking two products'
 worth of persistence/flash-layout assumptions into one image.
 
@@ -22,12 +22,14 @@ Exactly one of:
 | `tz3000-w0qqde0g` | `tlsr8258-ts011f-bl0942` | BL0942 (UART) | 1 MiB |
 | `tz3000-zloso4jk` | `tlsr8258-ts011f-bl0942` | BL0942 (UART) | 1 MiB |
 | `legacy-bl0937-pd6` | `tlsr8258-legacy-bl0937` | BL0937 (pulse capture) | 1 MiB |
+| `zbeacon-ts011f-512k` | `tlsr8258-zbeacon-ts011f-bl0937` | BL0937 (pulse capture) | 512 KiB |
 
 The four BL0942 products share one board crate and one router loop
-(`src/bl0942_app.rs`); the legacy BL0937 product has its own board crate and
-router loop (`src/bl0937_app.rs`). Model/manufacturer identity and flash
-layout always come from the selected product crate (`products/*`); this
-firmware never infers a product by runtime fingerprint.
+(`src/bl0942_app.rs`). The two incompatible BL0937 boards share only the
+capture-based router loop (`src/bl0937_app.rs`); each retains its own board
+and product crate. Model/manufacturer identity and flash layout always come
+from the selected product crate (`products/*`); this firmware never infers
+a product by runtime fingerprint.
 
 ## Building
 
@@ -42,6 +44,7 @@ scripts/tlsr8258-firmware.sh check firmware/tlsr8258-plug tlsr8258-plug 1m tz300
 # full build: cargo rustc, objcopy to .bin, post-link layout check
 scripts/tlsr8258-firmware.sh build firmware/tlsr8258-plug tlsr8258-plug 512k tz3000-gjnozsaz-512k
 scripts/tlsr8258-firmware.sh build firmware/tlsr8258-plug tlsr8258-plug 1m legacy-bl0937-pd6
+scripts/tlsr8258-firmware.sh build firmware/tlsr8258-plug tlsr8258-plug 512k zbeacon-ts011f-512k
 ```
 
 The layout (`512k`/`1m`) must match the selected product's flash geometry
@@ -50,18 +53,49 @@ default if `TLSR8258_LINKER_SCRIPT` is left unset by a direct
 `cargo build --no-default-features --features <product>` invocation.
 
 `.github/workflows/build-tc32.yml` runs the `build` command above for all
-five product features on every push/PR touching this crate or its
+six product features on every push/PR touching this crate or its
 dependencies, uploading each `.bin` as an experimental artifact. It never
 flashes hardware and has no `flash` job.
 
 ## Upstream dependency
 
 The firmware pins all `zigbee-rs` crates to commit
-`fd3d13f258a082149f8d77245ef4ebffdef0bdea`. That published revision
+`b97c749a66799dfafe9096bb16e4893f45519d5e`. That published revision
 contains the reusable TLSR8258 UART, GPIO capture, ADC, flash geometry,
 voltage guard, IRQ, timer, and router support used here, plus the typed
-device-role model (`zigbee_runtime::role`). No local Cargo `[patch]` is
+device-role model (`zigbee_runtime::role`) and the corrected R22
+many-to-one/source-routing implementation, bounded GSDK-style TCLK exchange,
+and normal coordinator-initiated leave handling. No local Cargo `[patch]` is
 required.
+
+The `fd3d13f`, `c8b2a66`, and current `b97c749` revisions serialize
+Request-Key/Verify-Key identically; merely updating this pin does not repair
+a stale Trust Center replay floor. A stock-to-Rust migration keeps the same
+factory EUI-64 but replaces the stock app config at `0x74000` with a new
+zigbee-rs security journal whose APS counter bounds initially start at zero.
+If the coordinator already knows that EUI from the stock firmware, remove
+the old device/link-key entry before pairing. Once zigbee-rs has
+commissioned, never raw-erase `0x74000..0x76000`: factory reset must preserve
+the counter bounds, and any manual recovery must restore a credential-free
+record with bounds above the Trust Center's retained replay floor.
+
+For ZiGate coordinators, first verify the radio firmware itself. ZiGate
+`v3.1d` used `bSetTclkFlashFeature || u8Status == 1` in the Trust Center
+join/rejoin callback `APP_bSendHATransportKey`; `v3.1e` changed the condition
+to `&&`, and its release notes identify the change as
+`Fix HATransportKey function (Device Authentification)`. Current `v3.23`
+retains the corrected condition. ZiGate also requires TCLK exchange and gives
+a newly joined node 15 seconds to complete it. The pinned stack starts after
+300 ms, keeps independent three-transmission budgets for Node Descriptor,
+Request-Key, and Verify-Key, uses 1.5/3/5-second response windows, and enforces
+one strict 15-second overall deadline. Its first pass completes within
+9.8 seconds, while any timeout retries remain bounded by the same deadline.
+Query version with command `0x0010` / response `0x8010`, use at least `v3.1e`,
+and capture Request-Key, Transport-Key, Verify-Key, Confirm-Key, and any
+coordinator Leave before changing crypto behavior. ZiGate's open source does
+not reveal which key its closed ZPS library uses for Confirm-Key, so accepting
+Confirm-Key under the public `ZigBeeAlliance09` key would be an unjustified
+authentication downgrade.
 
 Because a mains plug is a genuine parent, every image is built as a typed
 `zigbee_runtime::role::Router` (`ZigbeeDevice<TelinkMac, Router>` via
@@ -74,24 +108,24 @@ rationale.
 
 ## Hardware gates
 
-All five product features compile, link, produce `.bin` files, pass the
+All six product features compile, link, produce `.bin` files, pass the
 post-link flash/RAM/cache/RF-DMA checks, pass the typed-`Router` symbol gate
 (parent path present; End Device Timeout client + `EndDevice`/`RelayRouter`
 roles absent), and emit a `*.size.json` size/budget report with the
 modern-tc32 toolchain. Nothing in this crate has run on physical TLSR8258
 plug hardware. The open gates are therefore:
 
-| Product | `59ce930` | `fd3d13f` | Reduction | Current headroom |
-|---|---:|---:|---:|---:|
-| `tz3000-gjnozsaz-1m` | 362,500 B | 346,596 B | 15,904 B | 120,348 B |
-| `tz3000-gjnozsaz-512k` | 362,496 B | 346,592 B | 15,904 B | 120,352 B |
-| `tz3000-w0qqde0g` | 362,500 B | 346,596 B | 15,904 B | 120,348 B |
-| `tz3000-zloso4jk` | 362,500 B | 346,596 B | 15,904 B | 120,348 B |
-| `legacy-bl0937-pd6` | 367,724 B | 351,804 B | 15,920 B | 115,140 B |
+| Product | `b97c749` image | Headroom before `0x72000` | SHA-256 |
+|---|---:|---:|---|
+| `tz3000-gjnozsaz-1m` | 361,516 B | 105,428 B | `5363376a0909f2b3bacf783bd906fc6527cf5407f6080a3597aabcdb18f11aa5` |
+| `tz3000-gjnozsaz-512k` | 361,512 B | 105,432 B | `e608c831bf24f69a509439bb649cef9480ee2b0f53819d456b447c730d2f4894` |
+| `tz3000-w0qqde0g` | 361,516 B | 105,428 B | `a2cf1a07f1e6fc94681b456569a5252b316c48c2ed2ff45a49212c0d9543057d` |
+| `tz3000-zloso4jk` | 361,516 B | 105,428 B | `a1bcc340ab5b45c9ab316b88f476557a45182ff797882537c14fcf9963c973b7` |
+| `legacy-bl0937-pd6` | 367,352 B | 99,592 B | `c16524de86f66afab18826cc73c9005dd5e5732c7f0285abcb2f3d8d2e35b944` |
+| `zbeacon-ts011f-512k` | 366,476 B | 100,468 B | `dde692569cd541cbefeabdbd5112a3fddcb940b1623a56f71f9da76c89877e7c` |
 
-The comparison uses the same pinned `tc32-45` toolchain. Most of the reduction
-comes from the typed-role runtime update and compiling out the unused
-`float32`/`float64` ZCL codec; no parent/router table was reduced.
+These measurements use the pinned `tc32-45` toolchain. No parent/router
+table is reduced.
 
 1. preserve and inspect each exact board's original flash;
 2. verify JEDEC geometry and PC5 voltage-sense wiring;
@@ -131,23 +165,22 @@ used unchanged for `reset_security_state_if_identity_changed` — no
 per-product byte offset is added to it (see "No EUI mutation" below).
 
 Product metadata/layout itself (`ProductProfile.flash` in each
-`products/*/src/lib.rs`) is correct and unaffected: all five products
+`products/*/src/lib.rs`) is correct and unaffected: all six products
 already declare the right `FlashLayout` for their real flash size
 (verified against `plug-hardware`'s `TLSR8258_512K_LAYOUT`/
 `TLSR8258_1M_LAYOUT` constants and each product's `validate()` const
 assertion).
 
-**Build evidence:** all five products — `tz3000-gjnozsaz-512k` (512 KiB
-geometry), `tz3000-gjnozsaz-1m`, `tz3000-w0qqde0g`, `tz3000-zloso4jk`, and
-`legacy-bl0937-pd6` (all 1 MiB geometry) — build reproducibly against the
-pinned upstream commit via
+**Build evidence:** all six products — `tz3000-gjnozsaz-512k` and
+`zbeacon-ts011f-512k` (512 KiB geometry), plus `tz3000-gjnozsaz-1m`,
+`tz3000-w0qqde0g`, `tz3000-zloso4jk`, and `legacy-bl0937-pd6` (1 MiB
+geometry) — build reproducibly against the pinned upstream commit via
 `scripts/tlsr8258-firmware.sh build` (compiles, links, `objcopy`s to
 `.bin`, passes the script's post-link layout/RAM/RF-DMA boundary check and
 the typed-`Router` symbol gate, and writes `*.size.json`). Current image
-sizes are 346,596 B (`tz3000-gjnozsaz-1m`/`-w0qqde0g`/`-zloso4jk`),
-346,592 B (`tz3000-gjnozsaz-512k`), and 351,804 B (`legacy-bl0937-pd6`),
-all well under the app-NV budget at `0x72000` (466,944 B) — at least
-115 KiB of headroom. The 1 MiB builds' layout-check output
+sizes are listed above; all remain under the app-NV budget at `0x72000`
+(466,944 B), with at least 104,788 bytes of headroom. The 1 MiB builds'
+layout-check output
 correctly reports `factory_data=[0xFE000..0x100000)`, confirming the
 geometry-aware path resolves the right sector rather than the 512 KiB
 one. This remains a software/build result, not hardware proof.
@@ -198,9 +231,10 @@ declared geometry (loading the matching factory ADC calibration) before
 registers it as the real `VoltageGuardFn` — the same physical measurement
 path Telink's own SDK uses (an otherwise-unused GPIO pad driven high and
 sampled as a VBAT sense source), not a fabricated or constant reading.
-Both board crates (`tlsr8258-ts011f-bl0942`, `tlsr8258-legacy-bl0937`) now
+All three board crates (`tlsr8258-ts011f-bl0942`,
+`tlsr8258-legacy-bl0937`, and `tlsr8258-zbeacon-ts011f-bl0937`) now
 expose an `adc: tlsr8258_hal::peripherals::Adc` token and a
-`flash_voltage_pin: Pin` (PC5, previously unused on both boards, verified
+`flash_voltage_pin: Pin` (PC5, previously unused on all three boards, verified
 by grep before reservation) field on `BoardResources`. These resources are
 unconditional because the pinned HAL now provides the complete ADC API, so
 ordinary host CI compiles the same board ownership surface used by firmware.
@@ -217,7 +251,7 @@ to special-case flash brand detection itself. There is still no code path
 anywhere in this crate that fabricates a fixed voltage reading (e.g. a
 constant 3300 mV).
 
-**Build evidence:** all five products build end-to-end against the pinned
+**Build evidence:** all six products build end-to-end against the pinned
 upstream revision with this guard wired in — see the note above; the same
 `scripts/tlsr8258-firmware.sh build` run that verified the geometry-aware
 identity path also verified this. This is still not hardware-proven:

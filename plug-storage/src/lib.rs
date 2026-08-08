@@ -10,8 +10,9 @@
 //!
 //! # Ownership model
 //!
-//! Each board crate ([`tlsr8258_legacy_bl0937`] and
-//! [`tlsr8258_ts011f_bl0942`]) exposes its own zero-sized `OnboardFlash`
+//! Each board crate ([`tlsr8258_legacy_bl0937`],
+//! [`tlsr8258_ts011f_bl0942`], and
+//! [`tlsr8258_zbeacon_ts011f_bl0937`]) exposes its own zero-sized `OnboardFlash`
 //! token, constructible only inside that board's `BoardResources::take()`
 //! (itself gated to succeed at most once per boot by
 //! `tlsr8258_hal::peripherals::Peripherals::take`). [`split_onboard_flash`]
@@ -24,7 +25,7 @@
 //! never safely build two overlapping raw-flash accessors over one board's
 //! onboard flash.
 //!
-//! [`OnboardFlashToken`] is sealed: only the two board crates above may
+//! [`OnboardFlashToken`] is sealed: only the three board crates above may
 //! stand in for genuine, singleton-gated onboard flash ownership, so an
 //! arbitrary zero-sized value (e.g. `()`) cannot be substituted for it.
 //!
@@ -68,6 +69,9 @@ impl OnboardFlashToken for tlsr8258_legacy_bl0937::OnboardFlash {}
 
 impl sealed::Sealed for tlsr8258_ts011f_bl0942::OnboardFlash {}
 impl OnboardFlashToken for tlsr8258_ts011f_bl0942::OnboardFlash {}
+
+impl sealed::Sealed for tlsr8258_zbeacon_ts011f_bl0937::OnboardFlash {}
+impl OnboardFlashToken for tlsr8258_zbeacon_ts011f_bl0937::OnboardFlash {}
 
 /// Exclusive right to construct the product's application-NV flash
 /// accessor. Produced only by [`split_onboard_flash`] and consumed exactly

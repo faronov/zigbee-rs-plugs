@@ -19,7 +19,7 @@ name = "tlsr8258-plug"
 path = "src/main.rs"
 
 [features]
-# Exactly one of these five must be enabled — see `src/main.rs`'s
+# Exactly one of these six must be enabled — see `src/main.rs`'s
 # `compile_error!` guard. There is deliberately no `default` feature: an
 # unconfigured build must fail loudly, not silently pick a product.
 default = []
@@ -29,6 +29,7 @@ tz3000-gjnozsaz-512k = ["dep:tz3000-gjnozsaz-512k", "dep:tlsr8258-ts011f-bl0942"
 tz3000-w0qqde0g = ["dep:tz3000-w0qqde0g", "dep:tlsr8258-ts011f-bl0942", "dep:bl0942"]
 tz3000-zloso4jk = ["dep:tz3000-zloso4jk", "dep:tlsr8258-ts011f-bl0942", "dep:bl0942"]
 legacy-bl0937-pd6 = ["dep:legacy-bl0937-pd6", "dep:tlsr8258-legacy-bl0937", "dep:bl0937"]
+zbeacon-ts011f-512k = ["dep:zbeacon-ts011f-512k", "dep:tlsr8258-zbeacon-ts011f-bl0937", "dep:bl0937"]
 
 [dependencies]
 # Protocol stack (shared, generic — no product/board knowledge). This
@@ -37,8 +38,8 @@ legacy-bl0937-pd6 = ["dep:legacy-bl0937-pd6", "dep:tlsr8258-legacy-bl0937", "dep
 # unlike `zigbee-rs`'s own excluded `examples/telink-tlsr8258-router`
 # (which this crate's dependency list otherwise mirrors), these are
 # pinned directly to the same upstream git rev as the root workspace.
-zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "fd3d13f258a082149f8d77245ef4ebffdef0bdea" }
-zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "fd3d13f258a082149f8d77245ef4ebffdef0bdea" }
+zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b97c749a66799dfafe9096bb16e4893f45519d5e" }
+zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b97c749a66799dfafe9096bb16e4893f45519d5e" }
 # `default-features = false` on both `zigbee-zcl` and `zigbee-runtime`
 # drops the upstream `float32`/`float64` ZCL codec (unused by any smart-plug
 # cluster — all electrical/metering attributes are integer-scaled) and
@@ -46,13 +47,13 @@ zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "fd3d13f2
 # `examples/telink-tlsr8258-router` wiring. `constrained-memory` is
 # deliberately NOT enabled: this is a mains-powered parent router, and no
 # child/route/neighbour table may be shrunk to save flash.
-zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "fd3d13f258a082149f8d77245ef4ebffdef0bdea", default-features = false }
-zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "fd3d13f258a082149f8d77245ef4ebffdef0bdea", features = ["tlsr8258"] }
-zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "fd3d13f258a082149f8d77245ef4ebffdef0bdea", default-features = false, features = ["router"] }
+zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b97c749a66799dfafe9096bb16e4893f45519d5e", default-features = false }
+zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b97c749a66799dfafe9096bb16e4893f45519d5e", features = ["tlsr8258"] }
+zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b97c749a66799dfafe9096bb16e4893f45519d5e", default-features = false, features = ["router"] }
 
 # Platform.
-tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "fd3d13f258a082149f8d77245ef4ebffdef0bdea" }
-tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "fd3d13f258a082149f8d77245ef4ebffdef0bdea" }
+tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b97c749a66799dfafe9096bb16e4893f45519d5e" }
+tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b97c749a66799dfafe9096bb16e4893f45519d5e" }
 
 # Application/profile (shared, generic — no product/board knowledge).
 zigbee-plug-core = { path = "../../plug-core" }
@@ -61,9 +62,11 @@ zigbee-plug-controller = { path = "../../plug-controller" }
 zigbee-plug-storage = { path = "../../plug-storage" }
 
 # Boards: exactly one is pulled in transitively by the selected product
-# feature above (four BL0942 products share one board; BL0937 has its own).
+# feature above (four BL0942 products share one board; each incompatible
+# BL0937 product has its own board).
 tlsr8258-ts011f-bl0942 = { path = "../../boards/tlsr8258-ts011f-bl0942", optional = true }
 tlsr8258-legacy-bl0937 = { path = "../../boards/tlsr8258-legacy-bl0937", optional = true }
+tlsr8258-zbeacon-ts011f-bl0937 = { path = "../../boards/tlsr8258-zbeacon-ts011f-bl0937", optional = true }
 
 # Products: own model/manufacturer identity and flash layout (requirement
 # 2 — firmware never infers these by runtime fingerprint).
@@ -72,6 +75,7 @@ tz3000-gjnozsaz-512k = { path = "../../products/tz3000-gjnozsaz-512k", optional 
 tz3000-w0qqde0g = { path = "../../products/tz3000-w0qqde0g", optional = true }
 tz3000-zloso4jk = { path = "../../products/tz3000-zloso4jk", optional = true }
 legacy-bl0937-pd6 = { path = "../../products/legacy-bl0937-pd6", optional = true }
+zbeacon-ts011f-512k = { path = "../../products/zbeacon-ts011f-512k", optional = true }
 
 # Metering drivers: exactly one family is pulled in by the selected feature.
 bl0942 = { path = "../../drivers/bl0942", optional = true }

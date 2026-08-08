@@ -18,7 +18,7 @@ The repository follows the same ownership split as `zigbee-rs`:
    LED policy, protection-engine wiring, command/trip/latch semantics)
    used by every product's firmware — no per-product or per-chip code.
 8. `firmware/tlsr8258-plug` is the single no_std/no_main firmware crate that
-   composes exactly one product target at compile time (one of five
+   composes exactly one product target at compile time (one of six
    mutually exclusive Cargo features) into a production BDB/ZCL router
    loop, adapted from `zigbee-rs`'s
    `examples/telink-tlsr8258-router`. It is excluded from this workspace
@@ -55,13 +55,14 @@ reimplements relay/trip logic itself.
 
 `firmware/tlsr8258-plug` is a `no_std`/`no_main` binary crate excluded from
 this Cargo workspace (it targets `tc32`, which the host toolchain cannot
-build or lint). It selects exactly one of five mutually exclusive Cargo
+build or lint). It selects exactly one of six mutually exclusive Cargo
 features — one per product in `products/` — and fails to compile if zero or
 more than one is selected (`compile_error!` in `src/main.rs`). The four
 BL0942 products share one router loop (`bl0942_app.rs`) and metering task
-(`bl0942_task.rs`); the legacy BL0937 product uses a separate loop
-(`bl0937_app.rs`) and capture-based metering task (`bl0937_task.rs`), since
-its measurement chip has no UART and instead requires two edge-capture
+(`bl0942_task.rs`); both BL0937 products share a separate loop
+(`bl0937_app.rs`) and capture-based metering task (`bl0937_task.rs`), while
+retaining distinct board crates, since their measurement chip has no UART
+and instead requires two edge-capture
 channels. Product model/manufacturer identity and flash layout always come
 from the selected product crate — the firmware never fingerprints hardware
 at runtime to infer which product it is.
@@ -90,7 +91,7 @@ product's `FlashLayout`) into `OUT_DIR` — never editing the checked-in
 by `scripts/tlsr8258-firmware.sh` to point at an explicit, already-staged
 script).
 
-See `.github/workflows/build-tc32.yml` for the 5-way product matrix CI that
+See `.github/workflows/build-tc32.yml` for the six-way product matrix CI that
 exercises this crate's full build / layout-check / symbol-gate / size-report
 path (host CI in `ci.yml` is unaffected, since this crate stays
 workspace-excluded), and `firmware/tlsr8258-plug/README.md`'s "Hardware
@@ -100,10 +101,13 @@ gates" section for the remaining physical validation boundary.
 ## Upstream dependency
 
 All `zigbee-rs` crates are pinned to commit
-`fd3d13f258a082149f8d77245ef4ebffdef0bdea`. The pin includes calibrated
+`b97c749a66799dfafe9096bb16e4893f45519d5e`. The pin includes calibrated
 Electrical Measurement scaling, restoration of the 48-bit Simple Metering
 energy counter, the complete reusable TLSR8258 HAL consumed by the firmware,
-and the typed device-role model (`zigbee_runtime::role`).
+the typed device-role model (`zigbee_runtime::role`), and the corrected R22
+many-to-one/source-routing implementation required by a parent router, plus
+the bounded GSDK-style TCLK exchange and normal coordinator-initiated leave
+handling.
 
 **Typed `Router` role.** A mains-powered plug is a genuine parent
 `Router`, so both router loops name the `zigbee_runtime::role::Router` role
@@ -187,7 +191,7 @@ is present (`zigbee_runtime::role::Router`, `handle_child_rejoin_request`,
 `RelayRouter` roles and every End Device Timeout *client* method are absent) —
 and writes a per-product `*.size.json` (image size, the app-NV-start budget,
 remaining headroom, partition addresses, and the `.bin` sha256) that
-`build-tc32.yml` uploads alongside each image. All five product features have
+`build-tc32.yml` uploads alongside each image. All six product features have
 been compiled, linked, converted to `.bin`, layout-checked, symbol-gated, and
 size-reported with the modern-tc32 toolchain. Host tests additionally cover
 the storage token split and bounds arithmetic. Physical flash writes,
@@ -199,11 +203,12 @@ BL0942 firmware uses a TLSR8258 UART driver for PB1 TX/PB7 RX at 4800 baud,
 8 data bits, no parity, one stop bit (`tlsr8258_hal::uart::Uart`, an
 upstream API this repository consumes but does not implement).
 
-BL0937 firmware uses two edge-capture channels (`tlsr8258_hal::capture`) on
-PB5 (`Primary`/CF) and PB6 (`Risc0`/CF1), counting rising edges in fixed 1 s
-windows and feeding `bl0937::Bl0937`; a software capture overflow is
-reported explicitly (`bl0937_task::Outcome::OverflowDropped`) rather than
-silently dropped or interpolated.
+BL0937 firmware uses two edge-capture channels (`tlsr8258_hal::capture`):
+PB5/PB6 on `legacy-bl0937-pd6`, or PB4/PB5 on
+`zbeacon-ts011f-512k`. Both count rising edges in fixed 1 s windows and feed
+`bl0937::Bl0937`; a software capture overflow is reported explicitly
+(`bl0937_task::Outcome::OverflowDropped`) rather than silently dropped or
+interpolated.
 
 Both APIs, and the TLSR8258 timer/IRQ/ADC internals they depend on, are in
 the published `zigbee-rs` commit pinned by this repository. No local
@@ -227,7 +232,7 @@ factory/flash-UID-derived EUI-64 is used unchanged, and is also what
 `reset_security_state_if_identity_changed` compares against previously
 persisted state.
 
-All five products build reproducibly against the pinned upstream commit.
+All six products build reproducibly against the pinned upstream commit.
 The four 1 MiB products' post-link layout check reports
 `factory_data=[0xFE000..0x100000)`, not the 512 KiB sector. The corresponding
 ADC-calibration address is active:
@@ -235,8 +240,8 @@ ADC-calibration address is active:
 `tlsr8258_hal::adc::Adc::new(adc, geometry)` (which loads the matching
 factory ADC calibration for the product's geometry) before installing the
 real Zbit flash-voltage guard. The remaining gate is electrical: PC5's
-actual connection to a meaningful voltage-sense node on both physical board
-families has not been confirmed by schematic or measurement.
+actual connection to a meaningful voltage-sense node on any of the three
+physical board families has not been confirmed by schematic or measurement.
 
 ### No EUI mutation
 

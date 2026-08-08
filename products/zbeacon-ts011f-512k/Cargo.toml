@@ -1,0 +1,16 @@
+[package]
+name = "zbeacon-ts011f-512k"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bl0937.workspace = true
+tlsr8258-zbeacon-ts011f-bl0937.workspace = true
+zigbee-plug-core.workspace = true
+zigbee-plug-hardware.workspace = true
+zigbee-plug-storage.workspace = true
+
+[lints]
+workspace = true
