@@ -182,7 +182,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 [[package]]
 name = "tlsr8258-hal"
 version = "0.1.0"
-source = "git+https://github.com/faronov/zigbee-rs.git?rev=b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080#b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080"
+source = "git+https://github.com/faronov/zigbee-rs.git?rev=442b55e24ac4e4ad514708325770722b7941dc7a#442b55e24ac4e4ad514708325770722b7941dc7a"
 dependencies = [
  "aes",
  "embedded-hal",
@@ -276,7 +276,7 @@ dependencies = [
 [[package]]
 name = "zigbee-aps"
 version = "0.1.0"
-source = "git+https://github.com/faronov/zigbee-rs.git?rev=b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080#b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080"
+source = "git+https://github.com/faronov/zigbee-rs.git?rev=442b55e24ac4e4ad514708325770722b7941dc7a#442b55e24ac4e4ad514708325770722b7941dc7a"
 dependencies = [
  "heapless",
  "log",
@@ -289,7 +289,7 @@ dependencies = [
 [[package]]
 name = "zigbee-bdb"
 version = "0.1.0"
-source = "git+https://github.com/faronov/zigbee-rs.git?rev=b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080#b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080"
+source = "git+https://github.com/faronov/zigbee-rs.git?rev=442b55e24ac4e4ad514708325770722b7941dc7a#442b55e24ac4e4ad514708325770722b7941dc7a"
 dependencies = [
  "heapless",
  "log",
@@ -304,7 +304,7 @@ dependencies = [
 [[package]]
 name = "zigbee-crypto"
 version = "0.1.0"
-source = "git+https://github.com/faronov/zigbee-rs.git?rev=b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080#b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080"
+source = "git+https://github.com/faronov/zigbee-rs.git?rev=442b55e24ac4e4ad514708325770722b7941dc7a#442b55e24ac4e4ad514708325770722b7941dc7a"
 dependencies = [
  "aes",
  "heapless",
@@ -313,7 +313,7 @@ dependencies = [
 [[package]]
 name = "zigbee-mac"
 version = "0.1.0"
-source = "git+https://github.com/faronov/zigbee-rs.git?rev=b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080#b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080"
+source = "git+https://github.com/faronov/zigbee-rs.git?rev=442b55e24ac4e4ad514708325770722b7941dc7a#442b55e24ac4e4ad514708325770722b7941dc7a"
 dependencies = [
  "heapless",
  "log",
@@ -324,7 +324,7 @@ dependencies = [
 [[package]]
 name = "zigbee-nwk"
 version = "0.1.0"
-source = "git+https://github.com/faronov/zigbee-rs.git?rev=b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080#b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080"
+source = "git+https://github.com/faronov/zigbee-rs.git?rev=442b55e24ac4e4ad514708325770722b7941dc7a#442b55e24ac4e4ad514708325770722b7941dc7a"
 dependencies = [
  "heapless",
  "log",
@@ -376,7 +376,7 @@ dependencies = [
 [[package]]
 name = "zigbee-runtime"
 version = "0.1.0"
-source = "git+https://github.com/faronov/zigbee-rs.git?rev=b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080#b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080"
+source = "git+https://github.com/faronov/zigbee-rs.git?rev=442b55e24ac4e4ad514708325770722b7941dc7a#442b55e24ac4e4ad514708325770722b7941dc7a"
 dependencies = [
  "embedded-storage",
  "heapless",
@@ -393,12 +393,12 @@ dependencies = [
 [[package]]
 name = "zigbee-types"
 version = "0.1.0"
-source = "git+https://github.com/faronov/zigbee-rs.git?rev=b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080#b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080"
+source = "git+https://github.com/faronov/zigbee-rs.git?rev=442b55e24ac4e4ad514708325770722b7941dc7a#442b55e24ac4e4ad514708325770722b7941dc7a"
 
 [[package]]
 name = "zigbee-zcl"
 version = "0.1.0"
-source = "git+https://github.com/faronov/zigbee-rs.git?rev=b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080#b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080"
+source = "git+https://github.com/faronov/zigbee-rs.git?rev=442b55e24ac4e4ad514708325770722b7941dc7a#442b55e24ac4e4ad514708325770722b7941dc7a"
 dependencies = [
  "heapless",
  "log",
@@ -408,7 +408,7 @@ dependencies = [
 [[package]]
 name = "zigbee-zdo"
 version = "0.1.0"
-source = "git+https://github.com/faronov/zigbee-rs.git?rev=b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080#b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080"
+source = "git+https://github.com/faronov/zigbee-rs.git?rev=442b55e24ac4e4ad514708325770722b7941dc7a#442b55e24ac4e4ad514708325770722b7941dc7a"
 dependencies = [
  "heapless",
  "log",

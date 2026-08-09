@@ -41,10 +41,10 @@ zigbee-plug-profile = { path = "zigbee-plug-profile" }
 zigbee-plug-storage = { path = "plug-storage" }
 embedded-storage = "0.3"
 heapless = "0.9"
-tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080" }
-tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080" }
-zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080" }
-zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080" }
+tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a" }
+tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a" }
+zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a" }
+zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a" }
 # `default-features = false` drops the upstream `float32`/`float64` ZCL
 # defaults: no smart-plug cluster in this workspace carries a float ZCL
 # attribute (voltage/current/power/energy are all integer-scaled — see
@@ -53,9 +53,9 @@ zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b1f9cfde
 # `examples/telink-tlsr8258-router` dependency wiring exactly; it is *not*
 # a size hack that weakens routing — `constrained-memory` is deliberately
 # left off so no parent/child table is shrunk.
-zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080", default-features = false, features = ["router"] }
-zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080" }
-zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080", default-features = false }
+zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a", default-features = false, features = ["router"] }
+zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a" }
+zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

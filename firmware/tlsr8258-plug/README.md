@@ -60,15 +60,16 @@ flashes hardware and has no `flash` job.
 ## Upstream dependency
 
 The firmware pins all `zigbee-rs` crates to commit
-`b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080`. That published revision
+`442b55e24ac4e4ad514708325770722b7941dc7a`. That published revision
 contains the reusable TLSR8258 UART, GPIO capture, ADC, flash geometry,
 voltage guard, IRQ, timer, and router support used here, plus the typed
 device-role model (`zigbee_runtime::role`) and the corrected R22
 many-to-one/source-routing implementation, bounded GSDK-style TCLK exchange,
-and normal coordinator-initiated leave handling. No local Cargo `[patch]` is
-required.
+normal coordinator-initiated leave handling, and the priority-aware RX queues
+that prevent busy-channel traffic from starving local ZDO responses. No local
+Cargo `[patch]` is required.
 
-The `fd3d13f`, `c8b2a66`, `b97c749`, and current `b1f9cfd` revisions serialize
+The `fd3d13f`, `c8b2a66`, `b97c749`, `b1f9cfd`, and current `442b55e` revisions serialize
 Request-Key/Verify-Key identically; merely updating this pin does not repair
 a stale Trust Center replay floor. A stock-to-Rust migration keeps the same
 factory EUI-64 but replaces the stock app config at `0x74000` with a new
@@ -119,17 +120,19 @@ roles absent), and emit a `*.size.json` size/budget report with the
 modern-tc32 toolchain. Nothing in this crate has run on physical TLSR8258
 plug hardware. The open gates are therefore:
 
-| Product | `b1f9cfd` image | Headroom before `0x72000` | SHA-256 |
+| Product | `442b55e` image | Headroom before `0x72000` | SHA-256 |
 |---|---:|---:|---|
-| `tz3000-gjnozsaz-1m` | 365,748 B | 101,196 B | `db4b163ef33a52b6af35fc0cd06df225457b00e013e66e9482331448f6c57fb4` |
-| `tz3000-gjnozsaz-512k` | 365,744 B | 101,200 B | `0ff491c825a26114f2cc2b467d88c8db7ea69b3f598e3e096b54d6721b3d6457` |
-| `tz3000-w0qqde0g` | 365,748 B | 101,196 B | `31d2119ef4082612e5d0cbd1c2807de0ae0a10e2648cab66c96e8244dd3ae71d` |
-| `tz3000-zloso4jk` | 365,748 B | 101,196 B | `bea5f26e93ad82efa8f8df90bbc002352411fc5d969622502150cf110c9fd821` |
-| `legacy-bl0937-pd6` | 371,496 B | 95,448 B | `1c7958485b82dc03e31a06a7db436e50668721aa4e0dbf6c381a74c93899d0f9` |
-| `zbeacon-ts011f-512k` | 370,680 B | 96,264 B | `96f6c7a4c8f77dc6ba2251b10e003ee46b9a0ca34254093670a752dd1203c865` |
+| `tz3000-gjnozsaz-1m` | 336,088 B | 130,856 B | `4ad7867beac7b83961a007873f2f55186abe5512db9a3a1a802cdaaa6a3d7790` |
+| `tz3000-gjnozsaz-512k` | 336,084 B | 130,860 B | `6e91d1ed2245e4f1a1f7559c27476e3401220670b812f2f0fdf353b9486072b1` |
+| `tz3000-w0qqde0g` | 336,088 B | 130,856 B | `26d03150f80c136e2663dd2b78622d6529e6d74ed1fdf2f37a5ea9a76b0762db` |
+| `tz3000-zloso4jk` | 336,088 B | 130,856 B | `67732ca71b6b0d0cdc018a815674e6f35774785587b92dd2adae50cb6a84809a` |
+| `legacy-bl0937-pd6` | 341,836 B | 125,108 B | `1386867933dc5ff604d24e3691c0cf8ede126cd2a776b70fb9d127fdc5971b05` |
+| `zbeacon-ts011f-512k` | 341,020 B | 125,924 B | `8d2da94a0562930b40dabbdd35792ee1d826ae351dd39dc3aaaf6a78c59df51b` |
 
-These measurements use the pinned `tc32-45` toolchain. No parent/router
-table is reduced.
+These measurements use the pinned `tc32-45` toolchain. Every image is 29,660
+bytes smaller than the previous `b1f9cfd` build because the RX queue no
+longer emits 129-byte volatile copies in the interrupt and drain paths. No
+parent/router table is reduced.
 
 1. preserve and inspect each exact board's original flash;
 2. verify JEDEC geometry and PC5 voltage-sense wiring;
