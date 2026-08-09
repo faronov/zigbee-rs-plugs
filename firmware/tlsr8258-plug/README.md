@@ -60,7 +60,7 @@ flashes hardware and has no `flash` job.
 ## Upstream dependency
 
 The firmware pins all `zigbee-rs` crates to commit
-`b97c749a66799dfafe9096bb16e4893f45519d5e`. That published revision
+`b1f9cfde121f15ae6f8cf4efdd20f1b96ffcd080`. That published revision
 contains the reusable TLSR8258 UART, GPIO capture, ADC, flash geometry,
 voltage guard, IRQ, timer, and router support used here, plus the typed
 device-role model (`zigbee_runtime::role`) and the corrected R22
@@ -68,7 +68,7 @@ many-to-one/source-routing implementation, bounded GSDK-style TCLK exchange,
 and normal coordinator-initiated leave handling. No local Cargo `[patch]` is
 required.
 
-The `fd3d13f`, `c8b2a66`, and current `b97c749` revisions serialize
+The `fd3d13f`, `c8b2a66`, `b97c749`, and current `b1f9cfd` revisions serialize
 Request-Key/Verify-Key identically; merely updating this pin does not repair
 a stale Trust Center replay floor. A stock-to-Rust migration keeps the same
 factory EUI-64 but replaces the stock app config at `0x74000` with a new
@@ -88,14 +88,18 @@ retains the corrected condition. ZiGate also requires TCLK exchange and gives
 a newly joined node 15 seconds to complete it. The pinned stack starts after
 300 ms, keeps independent three-transmission budgets for Node Descriptor,
 Request-Key, and Verify-Key, uses 1.5/3/5-second response windows, and enforces
-one strict 15-second overall deadline. Its first pass completes within
-9.8 seconds, while any timeout retries remain bounded by the same deadline.
-Query version with command `0x0010` / response `0x8010`, use at least `v3.1e`,
-and capture Request-Key, Transport-Key, Verify-Key, Confirm-Key, and any
-coordinator Leave before changing crypto behavior. ZiGate's open source does
-not reveal which key its closed ZPS library uses for Confirm-Key, so accepting
-Confirm-Key under the public `ZigBeeAlliance09` key would be an unjustified
-authentication downgrade.
+a strict 15-second first-pass deadline. A ZiGate `v3.23` capture showed that
+it installs the unique TCLK and APS-acknowledges each correctly encrypted
+Verify-Key, but emits no Confirm-Key. The pinned stack therefore keeps the
+joined network only when that exact Verify-Key ACK authenticates under the
+negotiated unique key, then runs at most two deferred retry rounds spaced by
+10 seconds. An explicit authenticated rejection or persistence failure still
+causes a hard failure; a default-key, foreign, or unauthenticated ACK or
+Confirm-Key cannot enter the compatibility path. Query version with command
+`0x0010` / response `0x8010`, use at least `v3.1e`, and capture Request-Key,
+Transport-Key, Verify-Key, its secured APS ACK, Confirm-Key, and any Leave
+before changing crypto behavior. Accepting Confirm-Key under the public
+`ZigBeeAlliance09` key remains an unjustified authentication downgrade.
 
 Because a mains plug is a genuine parent, every image is built as a typed
 `zigbee_runtime::role::Router` (`ZigbeeDevice<TelinkMac, Router>` via
@@ -115,14 +119,14 @@ roles absent), and emit a `*.size.json` size/budget report with the
 modern-tc32 toolchain. Nothing in this crate has run on physical TLSR8258
 plug hardware. The open gates are therefore:
 
-| Product | `b97c749` image | Headroom before `0x72000` | SHA-256 |
+| Product | `b1f9cfd` image | Headroom before `0x72000` | SHA-256 |
 |---|---:|---:|---|
-| `tz3000-gjnozsaz-1m` | 361,516 B | 105,428 B | `5363376a0909f2b3bacf783bd906fc6527cf5407f6080a3597aabcdb18f11aa5` |
-| `tz3000-gjnozsaz-512k` | 361,512 B | 105,432 B | `e608c831bf24f69a509439bb649cef9480ee2b0f53819d456b447c730d2f4894` |
-| `tz3000-w0qqde0g` | 361,516 B | 105,428 B | `a2cf1a07f1e6fc94681b456569a5252b316c48c2ed2ff45a49212c0d9543057d` |
-| `tz3000-zloso4jk` | 361,516 B | 105,428 B | `a1bcc340ab5b45c9ab316b88f476557a45182ff797882537c14fcf9963c973b7` |
-| `legacy-bl0937-pd6` | 367,352 B | 99,592 B | `c16524de86f66afab18826cc73c9005dd5e5732c7f0285abcb2f3d8d2e35b944` |
-| `zbeacon-ts011f-512k` | 366,476 B | 100,468 B | `dde692569cd541cbefeabdbd5112a3fddcb940b1623a56f71f9da76c89877e7c` |
+| `tz3000-gjnozsaz-1m` | 365,748 B | 101,196 B | `db4b163ef33a52b6af35fc0cd06df225457b00e013e66e9482331448f6c57fb4` |
+| `tz3000-gjnozsaz-512k` | 365,744 B | 101,200 B | `0ff491c825a26114f2cc2b467d88c8db7ea69b3f598e3e096b54d6721b3d6457` |
+| `tz3000-w0qqde0g` | 365,748 B | 101,196 B | `31d2119ef4082612e5d0cbd1c2807de0ae0a10e2648cab66c96e8244dd3ae71d` |
+| `tz3000-zloso4jk` | 365,748 B | 101,196 B | `bea5f26e93ad82efa8f8df90bbc002352411fc5d969622502150cf110c9fd821` |
+| `legacy-bl0937-pd6` | 371,496 B | 95,448 B | `1c7958485b82dc03e31a06a7db436e50668721aa4e0dbf6c381a74c93899d0f9` |
+| `zbeacon-ts011f-512k` | 370,680 B | 96,264 B | `96f6c7a4c8f77dc6ba2251b10e003ee46b9a0ca34254093670a752dd1203c865` |
 
 These measurements use the pinned `tc32-45` toolchain. No parent/router
 table is reduced.
