@@ -48,7 +48,7 @@ zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e2
 # deliberately NOT enabled: this is a mains-powered parent router, and no
 # child/route/neighbour table may be shrunk to save flash.
 zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a", default-features = false }
-zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a", features = ["tlsr8258"] }
+zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a", features = ["tlsr8258", "hardware-aes"] }
 zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a", default-features = false, features = ["router"] }
 
 # Platform.

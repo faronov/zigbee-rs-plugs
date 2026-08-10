@@ -111,28 +111,39 @@ integer-scaled); `constrained-memory` is intentionally left off so no
 parent/child table is shrunk. See `docs/architecture.md` for the full
 rationale.
 
+Hardware AES is mandatory in every production plug image. Each board owns the
+exclusive TLSR8258 AES peripheral token, and the selected application installs
+it into `TelinkMac` before opening persistence or starting Zigbee. Installation
+runs the upstream on-chip known-answer self-test; failure leaves the relay off
+and enters the existing fail-closed startup path. There is no runtime software
+fallback. The `aes` crate can still appear in `Cargo.lock` as dependency
+metadata, so the release gate checks the linked ELF instead: `HardwareAes128`
+and `install_aes_engine` must be present, while `aes::soft` and
+`SoftwareAes128` must be absent.
+
 ## Hardware gates
 
 All six product features compile, link, produce `.bin` files, pass the
 post-link flash/RAM/cache/RF-DMA checks, pass the typed-`Router` symbol gate
-(parent path present; End Device Timeout client + `EndDevice`/`RelayRouter`
-roles absent), and emit a `*.size.json` size/budget report with the
-modern-tc32 toolchain. Nothing in this crate has run on physical TLSR8258
-plug hardware. The open gates are therefore:
+(hardware AES installed; software AES absent; parent path present; End Device
+Timeout client + `EndDevice`/`RelayRouter` roles absent), and emit a
+`*.size.json` size/budget report with the modern-tc32 toolchain. Nothing in
+this crate has run on physical TLSR8258 plug hardware. The open gates are
+therefore:
 
-| Product | `442b55e` image | Headroom before `0x72000` | SHA-256 |
+| Product | Hardware-AES image | Headroom before `0x72000` | SHA-256 |
 |---|---:|---:|---|
-| `tz3000-gjnozsaz-1m` | 336,088 B | 130,856 B | `4ad7867beac7b83961a007873f2f55186abe5512db9a3a1a802cdaaa6a3d7790` |
-| `tz3000-gjnozsaz-512k` | 336,084 B | 130,860 B | `6e91d1ed2245e4f1a1f7559c27476e3401220670b812f2f0fdf353b9486072b1` |
-| `tz3000-w0qqde0g` | 336,088 B | 130,856 B | `26d03150f80c136e2663dd2b78622d6529e6d74ed1fdf2f37a5ea9a76b0762db` |
-| `tz3000-zloso4jk` | 336,088 B | 130,856 B | `67732ca71b6b0d0cdc018a815674e6f35774785587b92dd2adae50cb6a84809a` |
-| `legacy-bl0937-pd6` | 341,836 B | 125,108 B | `1386867933dc5ff604d24e3691c0cf8ede126cd2a776b70fb9d127fdc5971b05` |
-| `zbeacon-ts011f-512k` | 341,020 B | 125,924 B | `8d2da94a0562930b40dabbdd35792ee1d826ae351dd39dc3aaaf6a78c59df51b` |
+| `tz3000-gjnozsaz-1m` | 332,408 B | 134,536 B | `5c9d87493fd6ee0e4eff1de6d5b42b3dc1565b67ef2f87488df6e34a98b64aa6` |
+| `tz3000-gjnozsaz-512k` | 332,404 B | 134,540 B | `ddd5f315be13bb7da50642d732ff0457bd9e5d8cc56efe80b5274bcc1d5ddcd0` |
+| `tz3000-w0qqde0g` | 332,408 B | 134,536 B | `3abf1370a8b23d021115ba65388dc4a63fd1c23c1c5c40bee226f191b3ca5d4c` |
+| `tz3000-zloso4jk` | 332,408 B | 134,536 B | `7a9ee728eebb2c6f00ee229021c391d8941aa04ac01fd7d1c781980dc8ba3858` |
+| `legacy-bl0937-pd6` | 338,084 B | 128,860 B | `59a19cfaee292d0f56108f3ed445c97a1868141d698541cfbe5cc8d6136ea115` |
+| `zbeacon-ts011f-512k` | 337,312 B | 129,632 B | `b45abefc334c4ba2f3090a27777a7cd80fbeda228e9c2de22d23ef066cac06eb` |
 
-These measurements use the pinned `tc32-45` toolchain. Every image is 29,660
-bytes smaller than the previous `b1f9cfd` build because the RX queue no
-longer emits 129-byte volatile copies in the interrupt and drain paths. No
-parent/router table is reduced.
+These measurements use the pinned `tc32-45` toolchain. Removing the linked
+software AES implementation saves 3,680-3,752 bytes versus the prior
+`442b55e` plug images despite adding the mandatory hardware-engine wiring and
+startup self-test. No parent/router table is reduced.
 
 1. preserve and inspect each exact board's original flash;
 2. verify JEDEC geometry and PC5 voltage-sense wiring;
@@ -186,7 +197,7 @@ geometry) — build reproducibly against the pinned upstream commit via
 `.bin`, passes the script's post-link layout/RAM/RF-DMA boundary check and
 the typed-`Router` symbol gate, and writes `*.size.json`). Current image
 sizes are listed above; all remain under the app-NV budget at `0x72000`
-(466,944 B), with at least 104,788 bytes of headroom. The 1 MiB builds'
+(466,944 B), with at least 128,860 bytes of headroom. The 1 MiB builds'
 layout-check output
 correctly reports `factory_data=[0xFE000..0x100000)`, confirming the
 geometry-aware path resolves the right sector rather than the 512 KiB

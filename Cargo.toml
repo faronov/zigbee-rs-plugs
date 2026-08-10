@@ -43,7 +43,7 @@ embedded-storage = "0.3"
 heapless = "0.9"
 tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a" }
 tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a" }
-zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a" }
+zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a", features = ["tlsr8258", "hardware-aes"] }
 zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "442b55e24ac4e4ad514708325770722b7941dc7a" }
 # `default-features = false` drops the upstream `float32`/`float64` ZCL
 # defaults: no smart-plug cluster in this workspace carries a float ZCL

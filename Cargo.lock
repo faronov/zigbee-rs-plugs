@@ -308,6 +308,7 @@ source = "git+https://github.com/faronov/zigbee-rs.git?rev=442b55e24ac4e4ad51470
 dependencies = [
  "aes",
  "heapless",
+ "tlsr8258-hal",
 ]
 
 [[package]]
@@ -317,6 +318,7 @@ source = "git+https://github.com/faronov/zigbee-rs.git?rev=442b55e24ac4e4ad51470
 dependencies = [
  "heapless",
  "log",
+ "tlsr8258-hal",
  "zigbee-crypto",
  "zigbee-types",
 ]

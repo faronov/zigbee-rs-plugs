@@ -29,6 +29,10 @@ pub struct BoardResources {
     pub button: Pin,
     pub metering: Bl0942Pins,
     pub flash: OnboardFlash,
+    /// Exclusive hardware AES-128 accelerator token. The firmware consumes
+    /// it once when installing the fail-closed hardware crypto provider into
+    /// `TelinkMac`; no software fallback is available in production.
+    pub aes: tlsr8258_hal::peripherals::Aes,
     /// Exclusive ownership token for the independent, non-DMA UART
     /// controller wired to [`Bl0942Pins`] (PB1 TX / PB7 RX). Consumed by
     /// firmware's `tlsr8258_hal::uart::Uart::new` to build the metering
@@ -64,6 +68,7 @@ impl BoardResources {
             button: pb5,
             metering: Bl0942Pins { tx: pb1, rx: pb7 },
             flash: OnboardFlash(()),
+            aes: peripherals.aes,
             uart: peripherals.uart,
             adc: peripherals.adc,
             flash_voltage_pin: pc5,
@@ -151,6 +156,7 @@ mod tests {
     #[test]
     fn onboard_flash_token_is_zero_sized() {
         assert_eq!(size_of::<OnboardFlash>(), 0);
+        assert_eq!(size_of::<tlsr8258_hal::peripherals::Aes>(), 0);
     }
 
     #[test]

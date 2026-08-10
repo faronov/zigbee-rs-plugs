@@ -103,6 +103,23 @@ verify_symbols() {
     local syms
     syms="$("$LLVM_NM" -C "$elf")"
 
+    # ── hardware AES required; software fallback forbidden ──────────────────
+    # Check the linked ELF, not Cargo metadata: `aes` can remain in the
+    # dependency graph for host/test APIs while LTO removes its implementation
+    # from a correctly wired production image.
+    if grep -Eq 'aes::soft|SoftwareAes128' <<<"$syms"; then
+        echo "symbol-gate FAIL: production image still links software AES" >&2
+        exit 1
+    fi
+    if ! grep -q 'HardwareAes128' <<<"$syms"; then
+        echo "symbol-gate FAIL: production image is missing TLSR8258 hardware AES" >&2
+        exit 1
+    fi
+    if ! grep -q 'install_aes_engine' <<<"$syms"; then
+        echo "symbol-gate FAIL: production image never installs the TLSR8258 AES engine" >&2
+        exit 1
+    fi
+
     # ── parent-present ───────────────────────────────────────────────────────
     # The device is monomorphized for `zigbee_runtime::role::Router`, it links
     # the concrete child-serving path (`handle_child_rejoin_request`), and it
@@ -160,7 +177,7 @@ verify_symbols() {
         exit 1
     fi
 
-    echo "symbol-gate OK (EXPERIMENTAL, not hardware-proven): parent Router path present (role::Router, handle_child_rejoin_request, nlme_start_router); ED-timeout client + EndDevice/RelayRouter roles absent"
+    echo "symbol-gate OK (EXPERIMENTAL, not hardware-proven): hardware AES present and software AES absent; parent Router path present (role::Router, handle_child_rejoin_request, nlme_start_router); ED-timeout client + EndDevice/RelayRouter roles absent"
 }
 
 verify_layout() {

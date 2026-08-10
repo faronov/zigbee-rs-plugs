@@ -128,6 +128,7 @@ pub fn run() -> ! {
         button,
         metering: metering_pins,
         flash,
+        aes,
         uart: uart_peripheral,
         adc,
         flash_voltage_pin,
@@ -140,11 +141,14 @@ pub fn run() -> ! {
     // product's capacity is unsupported or the fitted flash's JEDEC
     // geometry does not match it — never a fabricated or wrong-sector
     // identity. No per-product EUI byte offset is applied.
-    let (mac, ieee_address) = match router_support::mac_for_product(product::PRODUCT.flash.capacity)
-    {
-        Some(pair) => pair,
-        None => fail(&relay, &led),
-    };
+    let (mut mac, ieee_address) =
+        match router_support::mac_for_product(product::PRODUCT.flash.capacity) {
+            Some(pair) => pair,
+            None => fail(&relay, &led),
+        };
+    if mac.install_aes_engine(aes).is_err() {
+        fail(&relay, &led);
+    }
 
     // Install the real Zbit flash-voltage guard before opening/writing any
     // persistent storage. See `router_support::install_flash_voltage_guard`'s
