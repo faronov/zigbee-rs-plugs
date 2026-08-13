@@ -55,7 +55,10 @@ default if `TLSR8258_LINKER_SCRIPT` is left unset by a direct
 `.github/workflows/build-tc32.yml` runs the `build` command above for all
 six product features on every push/PR touching this crate or its
 dependencies, uploading each `.bin` as an experimental artifact. It never
-flashes hardware and has no `flash` job.
+flashes hardware and has no `flash` job. The SHA-256 values below identify
+those Linux GitHub Actions artifacts. The macOS-hosted `tc32-45` compiler
+produces the same sizes and layout results, but its output is not asserted to
+be byte-identical; use each build's generated `*.size.json` for its own hash.
 
 ## Upstream dependency
 
@@ -140,12 +143,12 @@ therefore:
 
 | Product | Hardware-AES image | Headroom before `0x72000` | SHA-256 |
 |---|---:|---:|---|
-| `tz3000-gjnozsaz-1m` | 330,888 B | 136,056 B | `60f8f3a0267ef30b1cab45d85ca1d8014eebe1818dbd1644fafb778ee35f8e7d` |
-| `tz3000-gjnozsaz-512k` | 330,884 B | 136,060 B | `6a51a182fef4250722eedd5c105144f4edaec183b58c7202adb95f720d00e75f` |
-| `tz3000-w0qqde0g` | 330,888 B | 136,056 B | `b31d367ce76250a723caabd25e83701dbac4c9bc19254c3d2e80bdc9551e5d29` |
-| `tz3000-zloso4jk` | 330,888 B | 136,056 B | `e48bded1329dff64a3dda91ca0c314660972dd87640e343ca6a36e3ce1747b5f` |
-| `legacy-bl0937-pd6` | 336,568 B | 130,376 B | `9ac13b60583b480c0e438f627eceeea0edb0058ee63dd2f70dc756897479e9f9` |
-| `zbeacon-ts011f-512k` | 335,796 B | 131,148 B | `ca83ce159e2cda32d50ba6ee3fe5037fbbe1aae029c8502410bf63cef5f987ae` |
+| `tz3000-gjnozsaz-1m` | 330,888 B | 136,056 B | `1e1fa256ee265d57bf86ea1be2beee8b3453a1d5ee60d4c81052050732cf91b6` |
+| `tz3000-gjnozsaz-512k` | 330,884 B | 136,060 B | `431e096a6a52405745d2bcf50c8171159ac645731e5d6c59adc046ece46afb4d` |
+| `tz3000-w0qqde0g` | 330,888 B | 136,056 B | `7667d6c3cd39c15580743c056485ec16e166a885f5e44f9c3fed9a83bc60b27a` |
+| `tz3000-zloso4jk` | 330,888 B | 136,056 B | `8ca1829372abe0f46eebb98a54f62f20bc4ce55b063926b434d2331fafafbac2` |
+| `legacy-bl0937-pd6` | 336,568 B | 130,376 B | `8d0a8664dfb345810553981bcad95306b0fec3b35658a1341be9ce0fa3ca1889` |
+| `zbeacon-ts011f-512k` | 335,796 B | 131,148 B | `9e31db9cd126238d6945c8844079263a02b6d0563ec8c5262c1361738ad3f61f` |
 
 These measurements use the pinned `tc32-45` toolchain. Updating the shared
 stack from `442b55e` to `32836f8` reduces these hardware-AES images by
@@ -198,12 +201,12 @@ assertion).
 **Build evidence:** all six products — `tz3000-gjnozsaz-512k` and
 `zbeacon-ts011f-512k` (512 KiB geometry), plus `tz3000-gjnozsaz-1m`,
 `tz3000-w0qqde0g`, `tz3000-zloso4jk`, and `legacy-bl0937-pd6` (1 MiB
-geometry) — build reproducibly against the pinned upstream commit via
+geometry) — build against the pinned upstream commit via
 `scripts/tlsr8258-firmware.sh build` (compiles, links, `objcopy`s to
 `.bin`, passes the script's post-link layout/RAM/RF-DMA boundary check and
 the typed-`Router` symbol gate, and writes `*.size.json`). Current image
 sizes are listed above; all remain under the app-NV budget at `0x72000`
-(466,944 B), with at least 128,860 bytes of headroom. The 1 MiB builds'
+(466,944 B), with at least 130,376 bytes of headroom. The 1 MiB builds'
 layout-check output
 correctly reports `factory_data=[0xFE000..0x100000)`, confirming the
 geometry-aware path resolves the right sector rather than the 512 KiB
