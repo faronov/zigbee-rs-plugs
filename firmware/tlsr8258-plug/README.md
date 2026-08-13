@@ -60,25 +60,25 @@ flashes hardware and has no `flash` job.
 ## Upstream dependency
 
 The firmware pins all `zigbee-rs` crates to commit
-`442b55e24ac4e4ad514708325770722b7941dc7a`. That published revision
+`32836f8f44a505b447ac4356c6d307bf90a085a5`. That published revision
 contains the reusable TLSR8258 UART, GPIO capture, ADC, flash geometry,
 voltage guard, IRQ, timer, and router support used here, plus the typed
 device-role model (`zigbee_runtime::role`) and the corrected R22
 many-to-one/source-routing implementation, bounded GSDK-style TCLK exchange,
 normal coordinator-initiated leave handling, and the priority-aware RX queues
-that prevent busy-channel traffic from starving local ZDO responses. No local
-Cargo `[patch]` is required.
+that prevent busy-channel traffic from starving local ZDO responses. It also
+contains the hardware-proven R22 Verify-Key correction described below. No
+local Cargo `[patch]` is required.
 
-The `fd3d13f`, `c8b2a66`, `b97c749`, `b1f9cfd`, and current `442b55e` revisions serialize
-Request-Key/Verify-Key identically; merely updating this pin does not repair
-a stale Trust Center replay floor. A stock-to-Rust migration keeps the same
-factory EUI-64 but replaces the stock app config at `0x74000` with a new
-zigbee-rs security journal whose APS counter bounds initially start at zero.
-If the coordinator already knows that EUI from the stock firmware, remove
-the old device/link-key entry before pairing. Once zigbee-rs has
-commissioned, never raw-erase `0x74000..0x76000`: factory reset must preserve
-the counter bounds, and any manual recovery must restore a credential-free
-record with bounds above the Trust Center's retained replay floor.
+Updating the stack pin does not repair a stale Trust Center replay floor. A
+stock-to-Rust migration keeps the same factory EUI-64 but replaces the stock
+app config at `0x74000` with a new zigbee-rs security journal whose APS counter
+bounds initially start at zero. If the coordinator already knows that EUI from
+the stock firmware, remove the old device/link-key entry before pairing. Once
+zigbee-rs has commissioned, never raw-erase `0x74000..0x76000`: factory reset
+must preserve the counter bounds, and any manual recovery must restore a
+credential-free record with bounds above the Trust Center's retained replay
+floor.
 
 For ZiGate coordinators, first verify the radio firmware itself. ZiGate
 `v3.1d` used `bSetTclkFlashFeature || u8Status == 1` in the Trust Center
@@ -89,18 +89,25 @@ retains the corrected condition. ZiGate also requires TCLK exchange and gives
 a newly joined node 15 seconds to complete it. The pinned stack starts after
 300 ms, keeps independent three-transmission budgets for Node Descriptor,
 Request-Key, and Verify-Key, uses 1.5/3/5-second response windows, and enforces
-a strict 15-second first-pass deadline. A ZiGate `v3.23` capture showed that
-it installs the unique TCLK and APS-acknowledges each correctly encrypted
-Verify-Key, but emits no Confirm-Key. The pinned stack therefore keeps the
-joined network only when that exact Verify-Key ACK authenticates under the
-negotiated unique key, then runs at most two deferred retry rounds spaced by
-10 seconds. An explicit authenticated rejection or persistence failure still
-causes a hard failure; a default-key, foreign, or unauthenticated ACK or
-Confirm-Key cannot enter the compatibility path. Query version with command
-`0x0010` / response `0x8010`, use at least `v3.1e`, and capture Request-Key,
-Transport-Key, Verify-Key, its secured APS ACK, Confirm-Key, and any Leave
-before changing crypto behavior. Accepting Confirm-Key under the public
-`ZigBeeAlliance09` key remains an unjustified authentication downgrade.
+a strict 15-second first-pass deadline.
+
+R22 requires Verify-Key to remain NWK-secured but **not** APS-encrypted. The
+pinned stack therefore emits APS frame control `0x41` with no APS auxiliary
+security header or MIC, computes the hash from the installed unique TCLK
+without consuming its outgoing APS security counter, and treats an APS ACK as
+transport feedback only. Commissioning completes only after an authenticated
+successful Confirm-Key; missing or rejected Confirm-Key follows the bounded
+retry/failure policy instead of an ACK-only compatibility path.
+
+The shared reference router has hardware-proven this exact exchange against
+ZiGate v3.23 on the first association: ZiGate validated the `0x41` Verify-Key
+and returned an APS-secured successful Confirm-Key. These plug images compile
+and link the same shared APS/BDB path, but still require their own board-level
+hardware acceptance. Query ZiGate version with command `0x0010` / response
+`0x8010`, use at least `v3.1e`, and capture Request-Key, Transport-Key,
+Verify-Key, Confirm-Key, and any Leave before changing crypto behavior.
+Accepting Confirm-Key under the public `ZigBeeAlliance09` key remains an
+unjustified authentication downgrade.
 
 Because a mains plug is a genuine parent, every image is built as a typed
 `zigbee_runtime::role::Router` (`ZigbeeDevice<TelinkMac, Router>` via
@@ -133,17 +140,16 @@ therefore:
 
 | Product | Hardware-AES image | Headroom before `0x72000` | SHA-256 |
 |---|---:|---:|---|
-| `tz3000-gjnozsaz-1m` | 332,408 B | 134,536 B | `5c9d87493fd6ee0e4eff1de6d5b42b3dc1565b67ef2f87488df6e34a98b64aa6` |
-| `tz3000-gjnozsaz-512k` | 332,404 B | 134,540 B | `ddd5f315be13bb7da50642d732ff0457bd9e5d8cc56efe80b5274bcc1d5ddcd0` |
-| `tz3000-w0qqde0g` | 332,408 B | 134,536 B | `3abf1370a8b23d021115ba65388dc4a63fd1c23c1c5c40bee226f191b3ca5d4c` |
-| `tz3000-zloso4jk` | 332,408 B | 134,536 B | `7a9ee728eebb2c6f00ee229021c391d8941aa04ac01fd7d1c781980dc8ba3858` |
-| `legacy-bl0937-pd6` | 338,084 B | 128,860 B | `59a19cfaee292d0f56108f3ed445c97a1868141d698541cfbe5cc8d6136ea115` |
-| `zbeacon-ts011f-512k` | 337,312 B | 129,632 B | `b45abefc334c4ba2f3090a27777a7cd80fbeda228e9c2de22d23ef066cac06eb` |
+| `tz3000-gjnozsaz-1m` | 330,888 B | 136,056 B | `60f8f3a0267ef30b1cab45d85ca1d8014eebe1818dbd1644fafb778ee35f8e7d` |
+| `tz3000-gjnozsaz-512k` | 330,884 B | 136,060 B | `6a51a182fef4250722eedd5c105144f4edaec183b58c7202adb95f720d00e75f` |
+| `tz3000-w0qqde0g` | 330,888 B | 136,056 B | `b31d367ce76250a723caabd25e83701dbac4c9bc19254c3d2e80bdc9551e5d29` |
+| `tz3000-zloso4jk` | 330,888 B | 136,056 B | `e48bded1329dff64a3dda91ca0c314660972dd87640e343ca6a36e3ce1747b5f` |
+| `legacy-bl0937-pd6` | 336,568 B | 130,376 B | `9ac13b60583b480c0e438f627eceeea0edb0058ee63dd2f70dc756897479e9f9` |
+| `zbeacon-ts011f-512k` | 335,796 B | 131,148 B | `ca83ce159e2cda32d50ba6ee3fe5037fbbe1aae029c8502410bf63cef5f987ae` |
 
-These measurements use the pinned `tc32-45` toolchain. Removing the linked
-software AES implementation saves 3,680-3,752 bytes versus the prior
-`442b55e` plug images despite adding the mandatory hardware-engine wiring and
-startup self-test. No parent/router table is reduced.
+These measurements use the pinned `tc32-45` toolchain. Updating the shared
+stack from `442b55e` to `32836f8` reduces these hardware-AES images by
+1,516-1,520 bytes. No parent/router table is reduced.
 
 1. preserve and inspect each exact board's original flash;
 2. verify JEDEC geometry and PC5 voltage-sense wiring;
