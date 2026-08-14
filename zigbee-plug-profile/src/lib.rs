@@ -7,8 +7,8 @@ use zigbee_plug_core::ElectricalSample;
 use zigbee_runtime::ZigbeeDevice;
 use zigbee_runtime::builder::EndpointBuilder;
 use zigbee_runtime::profile::{
-    ApplicationClusters, DeviceProfile, ProfileComponent, ProfileError, SmartPlug,
-    SmartPlugReporting,
+    ApplicationClusters, DeviceProfile, ExpectedReportClusters, ProfileComponent, ProfileError,
+    SmartPlug, SmartPlugReporting,
 };
 use zigbee_runtime::role::DeviceRole;
 use zigbee_zcl::clusters::electrical::AcScaling;
@@ -122,6 +122,10 @@ impl ProfileComponent for ZigbeePlug {
         self.inner.collect_clusters(endpoint, clusters)
     }
 
+    fn expected_report_cluster_ids(&self, out: &mut ExpectedReportClusters) {
+        self.inner.expected_report_cluster_ids(out);
+    }
+
     fn expected_report_clusters(&self) -> usize {
         self.inner.expected_report_clusters()
     }
@@ -153,6 +157,7 @@ fn milliwatts_to_watts(milliwatts: i32) -> i16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zigbee_zcl::ClusterId;
     use zigbee_zcl::clusters::Cluster;
     use zigbee_zcl::clusters::electrical::{
         ATTR_AC_CURRENT_DIVISOR, ATTR_ACTIVE_POWER, ATTR_RMS_CURRENT, ATTR_RMS_VOLTAGE,
@@ -212,5 +217,20 @@ mod tests {
         assert!(profile.is_on());
         profile.local_set_on(false);
         assert!(!profile.is_on());
+    }
+
+    #[test]
+    fn interview_completion_uses_the_smart_plug_report_clusters() {
+        let profile = ZigbeePlug::new(SmartPlugReporting::default()).unwrap();
+        let mut expected = ExpectedReportClusters::new();
+        profile.expected_report_cluster_ids(&mut expected);
+        assert_eq!(
+            expected.as_slice(),
+            &[
+                ClusterId::ON_OFF.0,
+                ClusterId::ELECTRICAL_MEASUREMENT.0,
+                ClusterId::METERING.0,
+            ]
+        );
     }
 }

@@ -167,7 +167,7 @@ where
             Ok(()) => LoopControl::Recommission,
             Err(_) => LoopControl::Fatal,
         },
-        StackEvent::FactoryResetRequested => {
+        StackEvent::BasicResetToFactoryDefaults => {
             // The Basic cluster already reset its writable attributes.
             // It must not erase Zigbee network credentials.
             LoopControl::Continue
