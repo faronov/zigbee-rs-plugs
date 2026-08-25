@@ -63,16 +63,19 @@ byte-identical; use each build's generated `*.size.json` for its own hash.
 ## Upstream dependency
 
 The firmware pins all `zigbee-rs` crates to commit
-`f15ead022537ab9bdd96f0c4b96e352e58a04b1e`. That published revision
+`aeddd2af7d8f894200d5770d2ea4f61e2c1bb34c`. That published revision
 contains the reusable TLSR8258 UART, GPIO capture, ADC, flash geometry,
 voltage guard, IRQ, timer, and router support used here, plus the typed
 device-role model (`zigbee_runtime::role`), corrected Telink factory EUI
 decoding, key-bound APS replay/retry handling, persisted R22 rejoin selection,
-and complete router Link Status, Network Report/Update, and authenticated
-address-conflict maintenance. It retains the bounded GSDK-style TCLK exchange,
-normal coordinator-initiated leave handling, priority-aware RX queues, and the
-hardware-proven R22 Verify-Key correction described below. No local Cargo
-`[patch]` is required.
+durable parent state, and complete router Link Status, Network Report/Update,
+and authenticated address-conflict maintenance. Its conflict detector requires
+an explicit NWK origin IEEE and never mistakes a relaying coordinator's
+auxiliary-security IEEE for the plug, preventing short-address churn before
+Active EP and On/Off responses. It retains the bounded GSDK-style TCLK
+exchange, normal coordinator-initiated leave handling, priority-aware RX
+queues, and the hardware-proven R22 Verify-Key correction described below. No
+local Cargo `[patch]` is required.
 
 Updating the stack pin does not repair a stale Trust Center replay floor. A
 stock-to-Rust migration keeps the same factory EUI-64 but replaces the stock
@@ -144,18 +147,16 @@ therefore:
 
 | Product | Hardware-AES image | Headroom before `0x72000` | SHA-256 |
 |---|---:|---:|---|
-| `tz3000-gjnozsaz-1m` | 343,612 B | 123,332 B | `a276cc239bd314e16b4ed094cbb26635d77fdcc6fdecaff587ee95c55e0576bc` |
-| `tz3000-gjnozsaz-512k` | 343,608 B | 123,336 B | `a098e66a8d58ead459d58eb32ab54f16b9dbafd090dcc37ccd70e04e27212a51` |
-| `tz3000-w0qqde0g` | 343,612 B | 123,332 B | `2db4d22f04e8f2ef7fd0b6b52eeaf43a0008f5938cd4f7e4679b282bf146dda7` |
-| `tz3000-zloso4jk` | 343,612 B | 123,332 B | `d28242e1b79eaf1963bb09bea30c6634cf72c57621b461257cff05df9e747ba1` |
-| `legacy-bl0937-pd6` | 349,292 B | 117,652 B | `76e4174fff1babf9a06fbffc822b5ef86d224785d43845aabea6a1a01a01f82d` |
-| `zbeacon-ts011f-512k` | 348,524 B | 118,420 B | `62f8dae70d8172a603f54ade9e677313508dc744485f6e8c4947190a0b99c557` |
+| `tz3000-gjnozsaz-1m` | 348,908 B | 118,036 B | `58e2dcdc212a8464735181aee3754c80a280f7cc4d15e6f7ae4440fccf8d9d8a` |
+| `tz3000-gjnozsaz-512k` | 348,904 B | 118,040 B | `24fec66b7f208c892f8111b8d0cb12c31549b0edd1238ea6ca92fc9a0a33bb8b` |
+| `tz3000-w0qqde0g` | 348,908 B | 118,036 B | `00cd7c5a1a6960e496a34951ae0ca8ba4d82b833fd838c60465816d6aa4dae43` |
+| `tz3000-zloso4jk` | 348,908 B | 118,036 B | `7d5414defc1edeb21749405b2a1ccdc503422a9e391d5d5b1511a93103d74f3e` |
+| `legacy-bl0937-pd6` | 354,192 B | 112,752 B | `3be9e4b7e40892a899bc7fc81f04ad35d89b24cf31a0a9e3f6115da5ac1affef` |
+| `zbeacon-ts011f-512k` | 353,932 B | 113,012 B | `7bc76228d39b45cbd7a0d5e42f3b81476a929ea6d3e82dc726512f143626a2df` |
 
-These measurements use the pinned `tc32-45` toolchain. Updating the shared
-stack from `32836f8` to `f15ead0` adds 12,724-12,728 bytes for the accumulated
-R22 replay, persisted-rejoin, Link Status, Network Report/Update,
-address-conflict, and exact reporting-completion behavior. No parent/router
-table is reduced.
+These measurements use the pinned `tc32-45` toolchain and include the complete
+R22 parent lifecycle, the corrected address-conflict path, and the Timer1
+local-control service. No parent/router table is reduced.
 
 1. preserve and inspect each exact board's original flash;
 2. verify JEDEC geometry and PC5 voltage-sense wiring;

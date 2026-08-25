@@ -112,13 +112,15 @@ gates" section for the remaining physical validation boundary.
 ## Upstream dependency
 
 All `zigbee-rs` crates are pinned to commit
-`b97c749a66799dfafe9096bb16e4893f45519d5e`. The pin includes calibrated
+`aeddd2af7d8f894200d5770d2ea4f61e2c1bb34c`. The pin includes calibrated
 Electrical Measurement scaling, restoration of the 48-bit Simple Metering
 energy counter, the complete reusable TLSR8258 HAL consumed by the firmware,
-the typed device-role model (`zigbee_runtime::role`), and the corrected R22
-many-to-one/source-routing implementation required by a parent router, plus
-the bounded GSDK-style TCLK exchange and normal coordinator-initiated leave
-handling.
+the typed device-role model (`zigbee_runtime::role`), the complete persisted
+R22 parent lifecycle, and corrected many-to-one/source routing required by a
+parent router. It also includes the bounded GSDK-style TCLK exchange, normal
+coordinator-initiated leave handling, and the address-conflict correction that
+does not confuse a relay's auxiliary-security IEEE with the original NWK
+source.
 
 **Typed `Router` role.** A mains-powered plug is a genuine parent
 `Router`, so both router loops name the `zigbee_runtime::role::Router` role
