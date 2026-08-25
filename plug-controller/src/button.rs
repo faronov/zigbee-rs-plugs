@@ -14,6 +14,15 @@ pub enum ButtonEdge {
     Released,
 }
 
+/// A complete user gesture after debounce.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ButtonGestureEvent {
+    /// The button was released before the long-press threshold.
+    ShortPress,
+    /// The button remained pressed for the configured hold time.
+    LongPress,
+}
+
 /// Debounces a raw, actively-driven boolean button level.
 ///
 /// The caller is responsible for translating its board's electrical active
@@ -68,6 +77,60 @@ impl ButtonDebouncer {
     }
 }
 
+/// Converts debounced edges into short-press and one-shot long-press events.
+///
+/// A short press is emitted on release, so a four-second factory-reset hold
+/// never toggles the relay first. The long-press event fires once while the
+/// button is still held.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ButtonGesture {
+    debouncer: ButtonDebouncer,
+    long_press_ms: u32,
+    pressed_since_ms: Option<u32>,
+    long_press_reported: bool,
+}
+
+impl ButtonGesture {
+    pub const fn new(debounce_ms: u32, long_press_ms: u32) -> Self {
+        Self {
+            debouncer: ButtonDebouncer::new(debounce_ms),
+            long_press_ms,
+            pressed_since_ms: None,
+            long_press_reported: false,
+        }
+    }
+
+    pub fn sample(&mut self, now_ms: u32, pressed: bool) -> Option<ButtonGestureEvent> {
+        match self.debouncer.sample(now_ms, pressed) {
+            Some(ButtonEdge::Pressed) => {
+                self.pressed_since_ms = Some(now_ms);
+                self.long_press_reported = false;
+            }
+            Some(ButtonEdge::Released) => {
+                let was_pressed = self.pressed_since_ms.take().is_some();
+                let short_press = was_pressed && !self.long_press_reported;
+                self.long_press_reported = false;
+                if short_press {
+                    return Some(ButtonGestureEvent::ShortPress);
+                }
+            }
+            None => {}
+        }
+
+        if self.debouncer.is_pressed()
+            && !self.long_press_reported
+            && self
+                .pressed_since_ms
+                .is_some_and(|started| now_ms.wrapping_sub(started) >= self.long_press_ms)
+        {
+            self.long_press_reported = true;
+            return Some(ButtonGestureEvent::LongPress);
+        }
+
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +168,45 @@ mod tests {
         assert_eq!(
             debouncer.sample(near_wrap.wrapping_add(30), true),
             Some(ButtonEdge::Pressed)
+        );
+    }
+
+    #[test]
+    fn short_press_is_reported_on_release() {
+        let mut gesture = ButtonGesture::new(30, 4_000);
+        assert_eq!(gesture.sample(0, true), None);
+        assert_eq!(gesture.sample(30, true), None);
+        assert_eq!(gesture.sample(200, false), None);
+        assert_eq!(
+            gesture.sample(230, false),
+            Some(ButtonGestureEvent::ShortPress)
+        );
+    }
+
+    #[test]
+    fn four_second_hold_reports_only_long_press() {
+        let mut gesture = ButtonGesture::new(30, 4_000);
+        assert_eq!(gesture.sample(0, true), None);
+        assert_eq!(gesture.sample(30, true), None);
+        assert_eq!(gesture.sample(4_029, true), None);
+        assert_eq!(
+            gesture.sample(4_030, true),
+            Some(ButtonGestureEvent::LongPress)
+        );
+        assert_eq!(gesture.sample(8_000, true), None);
+        assert_eq!(gesture.sample(8_010, false), None);
+        assert_eq!(gesture.sample(8_040, false), None);
+    }
+
+    #[test]
+    fn gesture_hold_time_is_wrap_safe() {
+        let mut gesture = ButtonGesture::new(30, 4_000);
+        let start = u32::MAX - 50;
+        assert_eq!(gesture.sample(start, true), None);
+        assert_eq!(gesture.sample(start.wrapping_add(30), true), None);
+        assert_eq!(
+            gesture.sample(start.wrapping_add(4_030), true),
+            Some(ButtonGestureEvent::LongPress)
         );
     }
 }

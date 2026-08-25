@@ -29,8 +29,10 @@
 #![no_std]
 
 pub mod button;
+pub mod indicator;
 
-pub use button::{ButtonDebouncer, ButtonEdge};
+pub use button::{ButtonDebouncer, ButtonEdge, ButtonGesture, ButtonGestureEvent};
+pub use indicator::{NetworkStatus, status_led_on};
 use zigbee_plug_core::{
     ElectricalSample, PlugSettings, ProtectionAction, ProtectionConfig, ProtectionEngine,
     TripReason,
@@ -77,6 +79,10 @@ impl PlugController {
 
     pub const fn trip_reason(&self) -> Option<TripReason> {
         self.protection.trip_reason()
+    }
+
+    pub fn clear_protection_latch(&mut self) {
+        self.protection.clear_latch();
     }
 
     /// Apply this product's startup policy on cold boot.

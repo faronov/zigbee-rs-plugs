@@ -159,11 +159,14 @@ table is reduced.
 
 1. preserve and inspect each exact board's original flash;
 2. verify JEDEC geometry and PC5 voltage-sense wiring;
-3. prove relay, LED, button, BL0942 UART or BL0937 pulse inputs, and flash
+3. prove relay, network-status LED, short-press local toggle, four-second
+   network factory reset, BL0942 UART or BL0937 pulse inputs, and flash
    persistence without a connected mains load;
-4. prove Zigbee commissioning, reporting, reset/resume, and counter
-   durability;
-5. keep OTA disabled until each geometry has a verified staging/activation
+4. prove the local relay remains responsive throughout scan, association,
+   failed join, retry backoff, rejoin, and normal joined operation;
+5. prove Zigbee commissioning, Active Endpoints, On/Off responses, reporting,
+   reset/resume, and counter durability;
+6. keep OTA disabled until each geometry has a verified staging/activation
    layout.
 
 ## Factory-identity gate for non-512 KiB products (runtime, geometry-aware, fail-closed)

@@ -23,7 +23,7 @@ use zigbee_runtime::profile::{ApplicationProfile, SmartPlugReporting};
 use zigbee_runtime::role::Router;
 use zigbee_zcl::clusters::basic::PowerSource;
 
-use zigbee_plug_controller::PlugController;
+use zigbee_plug_controller::{NetworkStatus, PlugController, RelayLedState};
 use zigbee_plug_core::{PlugSettings, ProtectionConfig, TickMillis};
 use zigbee_plug_profile::ZigbeePlug;
 
@@ -38,6 +38,7 @@ use tlsr8258_legacy_bl0937 as board;
 use tlsr8258_zbeacon_ts011f_bl0937 as board;
 
 use crate::bl0937_task::{self, Bl0937Task};
+use crate::local_control;
 use crate::persistence::Checkpoint;
 use crate::router_support::{self, LoopControl};
 
@@ -76,18 +77,41 @@ const fn product_protection_config() -> ProtectionConfig {
     product::PROTECTION_CONFIG
 }
 
-fn apply_outputs(relay: &Pin, led: &Pin, state: zigbee_plug_controller::RelayLedState) {
-    board::set_relay(relay, state.relay_on);
-    board::set_led(led, state.led_on);
+fn apply_outputs(controller: &PlugController, state: RelayLedState) {
+    local_control::set_safety_tripped(controller.trip_reason().is_some());
+    local_control::request_relay(state.relay_on);
+}
+
+fn sync_local_control(
+    controller: &mut PlugController,
+    plug: &mut ZigbeePlug,
+    local_relay_sequence: &mut u32,
+) {
+    if let Some(relay_on) = local_control::take_local_relay_change(local_relay_sequence) {
+        plug.local_set_on(relay_on);
+        local_control::acknowledge_local_relay_change(*local_relay_sequence);
+    }
+    if local_control::take_clear_trip_requested() {
+        controller.clear_protection_latch();
+    }
+    let state = controller.reconcile(plug);
+    apply_outputs(controller, state);
 }
 
 /// Spin forever with the primary status LED forced on, signaling an
 /// unrecoverable startup or runtime failure. There is no logging transport
 /// on this firmware, so this is the entire diagnostic surface for a fatal
 /// condition.
-fn fail(relay: &Pin, led: &Pin) -> ! {
+fn fail_before_local_control(relay: &Pin, led: &Pin) -> ! {
     board::set_relay(relay, false);
     board::set_led(led, true);
+    loop {
+        core::hint::spin_loop();
+    }
+}
+
+fn fail() -> ! {
+    local_control::enter_fault();
     loop {
         core::hint::spin_loop();
     }
@@ -140,10 +164,10 @@ pub fn run() -> ! {
     let (mut mac, ieee_address) =
         match router_support::mac_for_product(product::PRODUCT.flash.capacity) {
             Some(pair) => pair,
-            None => fail(&relay, &led),
+            None => fail_before_local_control(&relay, &led),
         };
     if mac.install_aes_engine(aes).is_err() {
-        fail(&relay, &led);
+        fail_before_local_control(&relay, &led);
     }
 
     // Install the real Zbit flash-voltage guard before opening/writing any
@@ -157,18 +181,18 @@ pub fn run() -> ! {
         flash_voltage_pin,
         product::PRODUCT.flash.capacity,
     ) {
-        fail(&relay, &led);
+        fail_before_local_control(&relay, &led);
     }
 
     let (mut app_nv, mut security_store) = match product::storage::open_storage(flash) {
         Ok(pair) => pair,
-        Err(_) => fail(&relay, &led),
+        Err(_) => fail_before_local_control(&relay, &led),
     };
     let (mut checkpoint, restored) = Checkpoint::restore(&mut app_nv);
 
     let plug = match ZigbeePlug::new(SmartPlugReporting::default()) {
         Ok(plug) => plug,
-        Err(_) => fail(&relay, &led),
+        Err(_) => fail_before_local_control(&relay, &led),
     };
     let mut profile = plug.into_device_profile(ENDPOINT);
 
@@ -191,7 +215,7 @@ pub fn run() -> ! {
         .reset_security_state_if_identity_changed(&mut security_store, ieee_address)
         .is_err()
     {
-        fail(&relay, &led);
+        fail_before_local_control(&relay, &led);
     }
 
     let mut node = ZigbeeNode::new(device, &mut security_store, &mut profile);
@@ -202,7 +226,16 @@ pub fn run() -> ! {
         BUTTON_DEBOUNCE_MS,
     );
     let state = controller.apply_startup(node.profile_mut().component_mut(), restored.relay_on);
-    apply_outputs(&relay, &led, state);
+    local_control::init(
+        relay,
+        led,
+        button,
+        board::set_relay,
+        board::set_led,
+        board::button_pressed,
+        state.relay_on,
+    );
+    apply_outputs(&controller, state);
 
     let (metering_calibration, sel_polarity) = product_metering_config();
     let mut metering_task = match Bl0937Task::new(
@@ -213,38 +246,100 @@ pub fn run() -> ! {
         sel_polarity,
     ) {
         Ok(task) => task,
-        Err(_) => fail(&relay, &led),
+        Err(_) => fail(),
     };
     metering_task.restore_energy_uwh(restored.energy_uwh);
     let mut clock = TickMillis::new(timer::TICKS_PER_MS, timer::now_ticks())
         .expect("Timer0 has a nonzero tick rate");
+    let mut local_relay_sequence = 0;
 
     'commission: loop {
+        local_control::set_network_status(NetworkStatus::Searching);
         let mut retry_delay_ms = JOIN_RETRY_MIN_MS;
         loop {
+            sync_local_control(
+                &mut controller,
+                node.profile_mut().component_mut(),
+                &mut local_relay_sequence,
+            );
+            local_control::set_network_status(NetworkStatus::Searching);
             clock.update(timer::now_ticks());
             let start_result = tlsr8258_rt::block_on(node.start_or_resume());
             clock.update(timer::now_ticks());
+            sync_local_control(
+                &mut controller,
+                node.profile_mut().component_mut(),
+                &mut local_relay_sequence,
+            );
+            if local_control::take_factory_reset_requested() {
+                node.profile_mut().component_mut().local_set_on(false);
+                let state = controller.reconcile(node.profile_mut().component_mut());
+                apply_outputs(&controller, state);
+                local_control::set_network_status(NetworkStatus::Searching);
+                let now_ms = clock.update(timer::now_ticks());
+                if checkpoint
+                    .write_relay_off(&mut app_nv, now_ms, metering_task.total_energy_uwh())
+                    .is_err()
+                {
+                    fail();
+                }
+                if tlsr8258_rt::block_on(node.factory_reset()).is_err() {
+                    fail();
+                }
+                continue 'commission;
+            }
             match start_result {
                 Ok(_) => break,
                 Err(StartError::CommissioningFailed(_)) => {
+                    local_control::set_network_status(NetworkStatus::Searching);
                     let announce_exhausted = node
                         .device()
                         .steering_diagnostics()
                         .device_annce_exhausted();
                     if announce_exhausted && tlsr8258_rt::block_on(node.factory_reset()).is_err() {
-                        fail(&relay, &led);
+                        fail();
                     }
-                    tlsr8258_hal::timer::sleep_ticks(tlsr8258_hal::timer::ms(retry_delay_ms));
-                    clock.update(timer::now_ticks());
+                    let wait_started = timer::now_ticks();
+                    let wait_ticks = timer::ms(retry_delay_ms);
+                    while timer::now_ticks().wrapping_sub(wait_started) < wait_ticks {
+                        sync_local_control(
+                            &mut controller,
+                            node.profile_mut().component_mut(),
+                            &mut local_relay_sequence,
+                        );
+                        if local_control::take_factory_reset_requested() {
+                            node.profile_mut().component_mut().local_set_on(false);
+                            let state =
+                                controller.reconcile(node.profile_mut().component_mut());
+                            apply_outputs(&controller, state);
+                            let now_ms = clock.update(timer::now_ticks());
+                            if checkpoint
+                                .write_relay_off(
+                                    &mut app_nv,
+                                    now_ms,
+                                    metering_task.total_energy_uwh(),
+                                )
+                                .is_err()
+                            {
+                                fail();
+                            }
+                            if tlsr8258_rt::block_on(node.factory_reset()).is_err() {
+                                fail();
+                            }
+                            continue 'commission;
+                        }
+                        timer::sleep_ticks(timer::ms(20));
+                        clock.update(timer::now_ticks());
+                    }
                     retry_delay_ms = retry_delay_ms.saturating_mul(2).min(JOIN_RETRY_MAX_MS);
                 }
-                Err(_) => fail(&relay, &led),
+                Err(_) => fail(),
             }
         }
+        local_control::set_network_status(NetworkStatus::Joined);
 
         if node.configure_default_reporting().is_err() {
-            fail(&relay, &led);
+            fail();
         }
 
         let mut tick_anchor = tlsr8258_hal::timer::now_ticks();
@@ -252,14 +347,37 @@ pub fn run() -> ! {
         let mut rx_slice_us = MAX_RX_SLICE_US;
 
         loop {
+            sync_local_control(
+                &mut controller,
+                node.profile_mut().component_mut(),
+                &mut local_relay_sequence,
+            );
+            if local_control::take_factory_reset_requested() {
+                node.profile_mut().component_mut().local_set_on(false);
+                let state = controller.reconcile(node.profile_mut().component_mut());
+                apply_outputs(&controller, state);
+                local_control::set_network_status(NetworkStatus::Searching);
+                let now_ms = clock.update(timer::now_ticks());
+                if checkpoint
+                    .write_relay_off(&mut app_nv, now_ms, metering_task.total_energy_uwh())
+                    .is_err()
+                {
+                    fail();
+                }
+                if tlsr8258_rt::block_on(node.factory_reset()).is_err() {
+                    fail();
+                }
+                continue 'commission;
+            }
+
             let mut event = None;
             match tlsr8258_rt::block_on(node.device_mut().receive_timeout(rx_slice_us)) {
                 Ok(indication) => match tlsr8258_rt::block_on(node.process_incoming(&indication)) {
                     Ok(stack_event) => event = stack_event,
-                    Err(_) => fail(&relay, &led),
+                    Err(_) => fail(),
                 },
                 Err(MacError::NoData) => {}
-                Err(_) => fail(&relay, &led),
+                Err(_) => fail(),
             }
 
             if let Some(stack_event) = event {
@@ -268,15 +386,18 @@ pub fn run() -> ! {
                     stack_event,
                 )) {
                     LoopControl::Continue => {}
-                    LoopControl::Recommission => continue 'commission,
-                    LoopControl::Fatal => fail(&relay, &led),
+                    LoopControl::Recommission => {
+                        local_control::set_network_status(NetworkStatus::Searching);
+                        continue 'commission;
+                    }
+                    LoopControl::Fatal => fail(),
                 }
             }
 
             // Reconcile the physical relay/LED after every processed
             // incoming frame, per this firmware's required behavior.
             let state = controller.reconcile(node.profile_mut().component_mut());
-            apply_outputs(&relay, &led, state);
+            apply_outputs(&controller, state);
 
             let now = tlsr8258_hal::timer::now_ticks();
             let now_ms = clock.update(now);
@@ -301,25 +422,22 @@ pub fn run() -> ! {
                         stack_event,
                     )) {
                         LoopControl::Continue => {}
-                        LoopControl::Recommission => continue 'commission,
-                        LoopControl::Fatal => fail(&relay, &led),
+                        LoopControl::Recommission => {
+                            local_control::set_network_status(NetworkStatus::Searching);
+                            continue 'commission;
+                        }
+                        LoopControl::Fatal => fail(),
                     }
                 }
-                Err(_) => fail(&relay, &led),
+                Err(_) => fail(),
             }
-
-            // Local button: debounce, toggle-or-clear-latch, reconcile.
-            let pressed = board::button_pressed(&button);
-            let state =
-                controller.on_button_sample(node.profile_mut().component_mut(), now_ms, pressed);
-            apply_outputs(&relay, &led, state);
 
             // ZCL On/Off's mandatory ~100 ms timers, decoupled from the
             // BDB `tick()` cadence above.
             if now.wrapping_sub(hundred_ms_anchor) >= HUNDRED_MS_TICKS {
                 hundred_ms_anchor = hundred_ms_anchor.wrapping_add(HUNDRED_MS_TICKS);
                 let state = controller.tick_100ms(node.profile_mut().component_mut());
-                apply_outputs(&relay, &led, state);
+                apply_outputs(&controller, state);
             }
 
             // Bounded metering poll; never blocks. `Bl0937Task::poll` uses
@@ -330,7 +448,7 @@ pub fn run() -> ! {
                     let _ =
                         controller.on_sample(node.profile_mut().component_mut(), now_ms, sample);
                     let state = controller.reconcile(node.profile_mut().component_mut());
-                    apply_outputs(&relay, &led, state);
+                    apply_outputs(&controller, state);
                 }
                 // Fail safe: an overflow-dropped window contributed no
                 // sample. There is no logging transport to otherwise
@@ -356,7 +474,7 @@ pub fn run() -> ! {
                 )
                 .is_err()
             {
-                fail(&relay, &led);
+                fail();
             }
         }
     }

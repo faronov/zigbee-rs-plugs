@@ -38,8 +38,10 @@ that composes:
 - `zigbee_plug_profile::ZigbeePlug` plus
   `zigbee_plug_core::ProtectionEngine` (relay desired/actual state and
   protection latch),
-- button debounce and press-to-toggle semantics,
-- LED policy (on/off/fault indication),
+- button debounce, short-press relay toggle, and one-shot four-second local
+  network factory-reset gesture,
+- network-status LED policy (dark while offline, one-hertz blink while
+  commissioning/rejoining, solid while joined or faulted),
 - `ZigbeePlug`'s ZCL On/Off mandatory 100 ms timers, and
 - electrical-sample ingestion that feeds the protection engine.
 
@@ -72,6 +74,15 @@ persistence stack. Their controller/metering/checkpoint timestamps use
 `TickMillis` to extend Timer0's roughly 179-second raw counter wrap into a
 normal wrapping `u32` millisecond clock; directly dividing the raw counter
 would reset application time on every hardware wrap.
+
+`local_control.rs` owns the relay, status LED, and button GPIO tokens after
+startup and services them from a dedicated 10 ms Timer1 interrupt. This keeps
+short-press relay control independent of BDB/MAC progress even while the
+single-threaded Telink operations are inside bounded synchronous waits. The
+interrupt only updates physical state and small flags; the main loop later
+reconciles a local relay selection into the ZCL OnOff attribute. Protection
+remains authoritative, and a four-second hold requests network factory reset
+without first toggling the relay.
 
 `persistence.rs` is shared by both loops: it restores the last checkpointed
 relay/energy state from the product's `ApplicationNv` before BDB profile

@@ -86,6 +86,7 @@ mod bl0942_app;
     feature = "tz3000-zloso4jk",
 ))]
 mod bl0942_task;
+mod local_control;
 mod persistence;
 mod router_support;
 
@@ -109,6 +110,7 @@ pub extern "C" fn irq_handler() {
     tlsr8258_hal::radio::handle_irq();
     #[cfg(any(feature = "legacy-bl0937-pd6", feature = "zbeacon-ts011f-512k",))]
     tlsr8258_hal::capture::handle_irq();
+    local_control::handle_timer_irq();
 }
 
 #[unsafe(no_mangle)]

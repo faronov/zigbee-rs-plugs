@@ -16,8 +16,8 @@ connections and public chip protocols are used.
 - original `no_std` BL0942 UART framing, checksum, decoding, and commands;
 - relay protection, restart, settings, and durable energy-record logic,
   composed into a host-testable `zigbee-plug-controller` (relay/LED
-  reconciliation, button debounce/toggle, protection trip/latch, startup
-  policy);
+  reconciliation, debounced short press, one-shot four-second reset gesture,
+  network-status LED policy, protection trip/latch, startup policy);
 - typed TLSR8258 board resources for the three known incompatible pin maps;
 - separate product profiles for each known Tuya fingerprint/flash geometry;
 - type-safe, single-split TLSR8258 application-NV and Zigbee security-journal
@@ -27,7 +27,9 @@ connections and public chip protocols are used.
 - a `no_std`/`no_main` `firmware/tlsr8258-plug` crate: one binary, exactly
   one of six compile-time product features, a production router loop
   adapted from `zigbee-rs`'s own `examples/telink-tlsr8258-router`, and the
-  BL0942 UART / BL0937 capture metering tasks;
+  BL0942 UART / BL0937 capture metering tasks; a dedicated 10 ms Timer1
+  service keeps the local relay button and network-status LED responsive
+  during blocking scan, association, rejoin, and retry operations;
 - a TC32 CI workflow (`.github/workflows/build-tc32.yml`) that matrix-builds
   all six product features and layout-checks each resulting image;
 - host tests, Clippy, formatting, and documentation CI.

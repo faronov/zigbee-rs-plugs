@@ -117,4 +117,15 @@ impl Checkpoint {
         self.has_written = true;
         Ok(true)
     }
+
+    /// Persist the relay-off state before a local network factory reset.
+    pub fn write_relay_off(
+        &mut self,
+        app_nv: &mut ApplicationNv,
+        now_ms: u32,
+        energy_uwh: u64,
+    ) -> Result<(), NvError> {
+        self.maybe_write(app_nv, now_ms, false, energy_uwh)
+            .map(|_| ())
+    }
 }
