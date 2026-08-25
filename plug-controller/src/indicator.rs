@@ -28,13 +28,14 @@ impl NetworkStatus {
 /// Resolve the logical LED state at `now_ms`.
 ///
 /// Searching uses a 500 ms on / 500 ms off cadence. Offline is dark and
-/// Joined/Fault are solid, matching the stock three-state behavior while
-/// preserving the previous solid-on fatal indication.
-pub const fn status_led_on(status: NetworkStatus, now_ms: u32) -> bool {
+/// Joined follows the relay, matching Tuya `backlight_mode = LightWhenOn`.
+/// Fault remains solid to preserve the fail-closed diagnostic indication.
+pub const fn status_led_on(status: NetworkStatus, relay_on: bool, now_ms: u32) -> bool {
     match status {
         NetworkStatus::Offline => false,
         NetworkStatus::Searching => (now_ms / 500).is_multiple_of(2),
-        NetworkStatus::Joined | NetworkStatus::Fault => true,
+        NetworkStatus::Joined => relay_on,
+        NetworkStatus::Fault => true,
     }
 }
 
@@ -43,19 +44,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn offline_is_dark_and_joined_is_solid() {
-        assert!(!status_led_on(NetworkStatus::Offline, 0));
-        assert!(!status_led_on(NetworkStatus::Offline, 10_000));
-        assert!(status_led_on(NetworkStatus::Joined, 0));
-        assert!(status_led_on(NetworkStatus::Joined, 10_000));
+    fn offline_is_dark_and_joined_follows_relay() {
+        assert!(!status_led_on(NetworkStatus::Offline, false, 0));
+        assert!(!status_led_on(NetworkStatus::Offline, true, 10_000));
+        assert!(!status_led_on(NetworkStatus::Joined, false, 0));
+        assert!(status_led_on(NetworkStatus::Joined, true, 10_000));
     }
 
     #[test]
     fn searching_blinks_at_one_hertz() {
-        assert!(status_led_on(NetworkStatus::Searching, 0));
-        assert!(status_led_on(NetworkStatus::Searching, 499));
-        assert!(!status_led_on(NetworkStatus::Searching, 500));
-        assert!(!status_led_on(NetworkStatus::Searching, 999));
-        assert!(status_led_on(NetworkStatus::Searching, 1_000));
+        assert!(status_led_on(NetworkStatus::Searching, false, 0));
+        assert!(status_led_on(NetworkStatus::Searching, true, 499));
+        assert!(!status_led_on(NetworkStatus::Searching, false, 500));
+        assert!(!status_led_on(NetworkStatus::Searching, true, 999));
+        assert!(status_led_on(NetworkStatus::Searching, false, 1_000));
     }
 }

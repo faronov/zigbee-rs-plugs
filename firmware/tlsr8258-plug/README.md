@@ -147,12 +147,12 @@ therefore:
 
 | Product | Hardware-AES image | Headroom before `0x72000` | SHA-256 |
 |---|---:|---:|---|
-| `tz3000-gjnozsaz-1m` | 348,908 B | 118,036 B | `58e2dcdc212a8464735181aee3754c80a280f7cc4d15e6f7ae4440fccf8d9d8a` |
-| `tz3000-gjnozsaz-512k` | 348,904 B | 118,040 B | `24fec66b7f208c892f8111b8d0cb12c31549b0edd1238ea6ca92fc9a0a33bb8b` |
-| `tz3000-w0qqde0g` | 348,908 B | 118,036 B | `00cd7c5a1a6960e496a34951ae0ca8ba4d82b833fd838c60465816d6aa4dae43` |
-| `tz3000-zloso4jk` | 348,908 B | 118,036 B | `7d5414defc1edeb21749405b2a1ccdc503422a9e391d5d5b1511a93103d74f3e` |
-| `legacy-bl0937-pd6` | 354,192 B | 112,752 B | `3be9e4b7e40892a899bc7fc81f04ad35d89b24cf31a0a9e3f6115da5ac1affef` |
-| `zbeacon-ts011f-512k` | 353,932 B | 113,012 B | `7bc76228d39b45cbd7a0d5e42f3b81476a929ea6d3e82dc726512f143626a2df` |
+| `tz3000-gjnozsaz-1m` | 348,908 B | 118,036 B | `3871a6cf7a0571eaf3d2f8ff3b660ed7cb074f34ba344e6b3bab98853b2f88c5` |
+| `tz3000-gjnozsaz-512k` | 348,904 B | 118,040 B | `22a80adea86e61caff61256fd7659121bbc8864bbb6d51aa89762617824c19eb` |
+| `tz3000-w0qqde0g` | 348,908 B | 118,036 B | `a2eaf6fc36271694cb0ce8cdf01fff6dfdda0202426bbdfb827452b953b2c30c` |
+| `tz3000-zloso4jk` | 348,908 B | 118,036 B | `fbfd93059ade1eec30e2afe0ade0b6ee5c22b97f89c01d4430a9c7b12cc49ee7` |
+| `legacy-bl0937-pd6` | 354,192 B | 112,752 B | `17da037137001fd2d475a4f21013f22d258a62a6dc370903f79ca3d88a73245f` |
+| `zbeacon-ts011f-512k` | 353,932 B | 113,012 B | `f3b8a8755c2ce6e963fa18a68c0ec38f50360c15db4f3961807abce701a9cada` |
 
 These measurements use the pinned `tc32-45` toolchain and include the complete
 R22 parent lifecycle, the corrected address-conflict path, and the Timer1

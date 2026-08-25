@@ -41,7 +41,7 @@ that composes:
 - button debounce, short-press relay toggle, and one-shot four-second local
   network factory-reset gesture,
 - network-status LED policy (dark while offline, one-hertz blink while
-  commissioning/rejoining, solid while joined or faulted),
+  commissioning/rejoining, follows the relay while joined, solid on fault),
 - `ZigbeePlug`'s ZCL On/Off mandatory 100 ms timers, and
 - electrical-sample ingestion that feeds the protection engine.
 

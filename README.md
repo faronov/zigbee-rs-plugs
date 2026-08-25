@@ -17,7 +17,8 @@ connections and public chip protocols are used.
 - relay protection, restart, settings, and durable energy-record logic,
   composed into a host-testable `zigbee-plug-controller` (relay/LED
   reconciliation, debounced short press, one-shot four-second reset gesture,
-  network-status LED policy, protection trip/latch, startup policy);
+  stock-default `LightWhenOn` LED policy, protection trip/latch, startup
+  policy);
 - typed TLSR8258 board resources for the three known incompatible pin maps;
 - separate product profiles for each known Tuya fingerprint/flash geometry;
 - type-safe, single-split TLSR8258 application-NV and Zigbee security-journal

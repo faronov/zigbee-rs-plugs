@@ -153,7 +153,7 @@ pub fn handle_timer_irq() {
     }
 
     let status = NetworkStatus::from_u8(NETWORK_STATUS.load(Ordering::Acquire));
-    let led_on = status_led_on(status, now_ms);
+    let led_on = status_led_on(status, relay_on, now_ms);
     if led_on != state.applied_led_on {
         (state.set_led)(&state.led, led_on);
         state.applied_led_on = led_on;
