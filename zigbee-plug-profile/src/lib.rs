@@ -96,6 +96,10 @@ impl ZigbeePlug {
         self.inner.tick_on_off();
     }
 
+    pub fn tick_on_off_by(&mut self, elapsed_deciseconds: u32) {
+        self.inner.tick_on_off_by(elapsed_deciseconds);
+    }
+
     pub fn apply_startup_on_off(&mut self, previous_on: bool) {
         self.inner.apply_startup_on_off(previous_on);
     }

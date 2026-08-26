@@ -13,6 +13,7 @@ use core::marker::PhantomData;
 use embedded_storage::nor_flash::{ErrorType, NorFlash, ReadNorFlash};
 use tlsr8258_hal::flash::{FlashError, Tlsr8258Flash};
 use zigbee_plug_hardware::FlashLayout;
+use zigbee_runtime::child_store::{CHILD_JOURNAL_SECTOR_SIZE, ChildTableJournal};
 use zigbee_runtime::log_nv::LogStructuredNv;
 use zigbee_runtime::security_journal::{SECURITY_JOURNAL_SECTOR_SIZE, SecurityStateJournal};
 
@@ -20,12 +21,14 @@ use zigbee_runtime::security_journal::{SECURITY_JOURNAL_SECTOR_SIZE, SecuritySta
 // taking a direct `zigbee-runtime` dependency of their own.
 pub use zigbee_runtime::nv_storage::NvError;
 
-use crate::{AppNvPartition, SecurityPartition, checked_partition_offset};
+use crate::{AppNvPartition, ChildTablePartition, SecurityPartition, checked_partition_offset};
 
 /// Uninhabited marker distinguishing [`AppNvFlash`] from [`SecurityFlash`]
 /// at the type level, so the two partitions cannot be confused even though
 /// they share one generic implementation.
 pub struct AppNvRegion(());
+/// Uninhabited marker distinguishing the child-table journal partition.
+pub struct ChildTableRegion(());
 /// See [`AppNvRegion`].
 pub struct SecurityRegion(());
 
@@ -88,6 +91,8 @@ impl<Region> NorFlash for PartitionFlash<Region> {
 
 /// The product-owned application-NV log partition (`0x72000..0x74000`).
 pub type AppNvFlash = PartitionFlash<AppNvRegion>;
+/// The durable Zigbee child-table journal partition (`0x70000..0x72000`).
+pub type ChildTableFlash = PartitionFlash<ChildTableRegion>;
 /// The Zigbee security-counter journal partition (`0x74000..0x76000`).
 pub type SecurityFlash = PartitionFlash<SecurityRegion>;
 
@@ -99,6 +104,19 @@ impl AppNvFlash {
             flash: Tlsr8258Flash::new(layout.capacity as usize),
             start: layout.application_nv.start,
             size: layout.application_nv.size() as usize,
+            _region: PhantomData,
+        }
+    }
+}
+
+impl ChildTableFlash {
+    /// Consume the [`ChildTablePartition`] token to construct the bounded
+    /// child-table journal flash accessor described by `layout`.
+    pub const fn new(_token: ChildTablePartition, layout: FlashLayout) -> Self {
+        Self {
+            flash: Tlsr8258Flash::new(layout.capacity as usize),
+            start: layout.child_table_journal.start,
+            size: layout.child_table_journal.size() as usize,
             _region: PhantomData,
         }
     }
@@ -119,11 +137,15 @@ impl SecurityFlash {
 
 /// Product-owned application-NV log store.
 pub type ApplicationNv = LogStructuredNv<AppNvFlash>;
+/// Product-owned durable Zigbee child-table journal.
+pub type ChildStore = ChildTableJournal<ChildTableFlash>;
 /// Product-owned Zigbee security-counter journal store.
 pub type SecurityStore = SecurityStateJournal<SecurityFlash>;
 
 const NV_PAGE_A: u32 = 0;
 const NV_PAGE_B: u32 = SECURITY_JOURNAL_SECTOR_SIZE as u32;
+const CHILD_SECTOR_A: u32 = 0;
+const CHILD_SECTOR_B: u32 = CHILD_JOURNAL_SECTOR_SIZE as u32;
 const SECURITY_SECTOR_A: u32 = 0;
 const SECURITY_SECTOR_B: u32 = SECURITY_JOURNAL_SECTOR_SIZE as u32;
 
@@ -138,6 +160,16 @@ pub fn application_nv(
     layout: FlashLayout,
 ) -> Result<ApplicationNv, NvError> {
     LogStructuredNv::new(AppNvFlash::new(token, layout), NV_PAGE_A, NV_PAGE_B)
+}
+
+/// Build the durable child-table journal over `layout`'s dedicated
+/// two-sector partition, consuming `token` exactly once.
+pub const fn child_table_store(token: ChildTablePartition, layout: FlashLayout) -> ChildStore {
+    ChildTableJournal::new(
+        ChildTableFlash::new(token, layout),
+        CHILD_SECTOR_A,
+        CHILD_SECTOR_B,
+    )
 }
 
 /// Build the Zigbee security-counter journal over `layout`'s security
@@ -160,6 +192,12 @@ mod tests {
     );
     const _: () =
         assert!(TLSR8258_1M_LAYOUT.application_nv.size() as usize == 2 * Tlsr8258Flash::ERASE_SIZE);
+    const _: () = assert!(
+        TLSR8258_512K_LAYOUT.child_table_journal.size() as usize == 2 * CHILD_JOURNAL_SECTOR_SIZE
+    );
+    const _: () = assert!(
+        TLSR8258_1M_LAYOUT.child_table_journal.size() as usize == 2 * CHILD_JOURNAL_SECTOR_SIZE
+    );
     const _: () = assert!(
         TLSR8258_512K_LAYOUT.security_journal.size() as usize == 2 * SECURITY_JOURNAL_SECTOR_SIZE
     );

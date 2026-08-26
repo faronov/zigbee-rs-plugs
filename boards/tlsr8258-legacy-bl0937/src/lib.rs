@@ -2,9 +2,47 @@
 
 #![no_std]
 
-pub use zigbee_plug_hardware::LEGACY_BL0937_PD6 as PROFILE;
-
 use tlsr8258_hal::gpio::Pin;
+use zigbee_plug_hardware::{
+    ActiveLevel, BoardProfile, Input, MeteringPins, Output, Pin as ProfilePin, Port,
+};
+
+const LEDS: [Output; 3] = [
+    Output {
+        pin: ProfilePin::new(Port::D, 7),
+        active: ActiveLevel::High,
+    },
+    Output {
+        pin: ProfilePin::new(Port::D, 5),
+        active: ActiveLevel::High,
+    },
+    Output {
+        pin: ProfilePin::new(Port::D, 4),
+        active: ActiveLevel::High,
+    },
+];
+
+pub const PROFILE: BoardProfile = BoardProfile {
+    name: "legacy-bl0937-pd6",
+    relay: Output {
+        pin: ProfilePin::new(Port::D, 6),
+        active: ActiveLevel::High,
+    },
+    leds: &LEDS,
+    button: Input {
+        pin: ProfilePin::new(Port::D, 3),
+        active: ActiveLevel::High,
+        pull_up_ohms: None,
+    },
+    metering: MeteringPins::Bl0937 {
+        cf: ProfilePin::new(Port::B, 5),
+        cf1: ProfilePin::new(Port::B, 6),
+        sel: Output {
+            pin: ProfilePin::new(Port::B, 7),
+            active: ActiveLevel::High,
+        },
+    },
+};
 
 pub struct Bl0937Pins {
     pub cf: Pin,

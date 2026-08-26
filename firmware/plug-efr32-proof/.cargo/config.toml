@@ -1,0 +1,13 @@
+[build]
+target = "thumbv8m.main-none-eabihf"
+
+[target.thumbv8m.main-none-eabihf]
+rustflags = [
+    "-L", "../../products/plug-efr32-proof/link",
+    "-L", "../../boards/efr32mg21-brd4181a-plug/link",
+    "-C", "link-arg=-Tlink.x",
+    "-C", "link-arg=--nmagic",
+]
+
+[env]
+RUST_LOG = "info"

@@ -87,18 +87,14 @@ mod bl0942_app;
 ))]
 mod bl0942_task;
 mod local_control;
-mod persistence;
+mod plug_platform;
 mod router_support;
 
 use tlsr8258_rt as _;
 
 #[panic_handler]
 fn panic_handler(_info: &core::panic::PanicInfo) -> ! {
-    loop {
-        unsafe {
-            core::arch::asm!("nop");
-        }
-    }
+    local_control::enter_fault()
 }
 
 /// Combined IRQ vector. Radio's own handler **must** run before capture's —

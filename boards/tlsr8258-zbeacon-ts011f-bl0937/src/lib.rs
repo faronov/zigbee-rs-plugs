@@ -1,8 +1,36 @@
 #![no_std]
 
-pub use zigbee_plug_hardware::ZBEACON_TS011F_BL0937_PD2 as PROFILE;
-
 use tlsr8258_hal::gpio::Pin;
+use zigbee_plug_hardware::{
+    ActiveLevel, BoardProfile, Input, MeteringPins, Output, Pin as ProfilePin, Port,
+};
+
+const LEDS: [Output; 1] = [Output {
+    pin: ProfilePin::new(Port::B, 1),
+    active: ActiveLevel::Low,
+}];
+
+pub const PROFILE: BoardProfile = BoardProfile {
+    name: "zbeacon-ts011f-bl0937-pd2",
+    relay: Output {
+        pin: ProfilePin::new(Port::D, 2),
+        active: ActiveLevel::High,
+    },
+    leds: &LEDS,
+    button: Input {
+        pin: ProfilePin::new(Port::A, 0),
+        active: ActiveLevel::Low,
+        pull_up_ohms: Some(10_000),
+    },
+    metering: MeteringPins::Bl0937 {
+        cf: ProfilePin::new(Port::B, 4),
+        cf1: ProfilePin::new(Port::B, 5),
+        sel: Output {
+            pin: ProfilePin::new(Port::D, 3),
+            active: ActiveLevel::High,
+        },
+    },
+};
 
 pub struct Bl0937Pins {
     pub cf: Pin,

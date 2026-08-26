@@ -2,9 +2,34 @@
 
 #![no_std]
 
-pub use zigbee_plug_hardware::TS011F_BL0942_PC2 as PROFILE;
-
 use tlsr8258_hal::gpio::Pin;
+use zigbee_plug_hardware::{
+    ActiveLevel, BoardProfile, Input, MeteringPins, Output, Pin as ProfilePin, Port,
+};
+
+const LEDS: [Output; 1] = [Output {
+    pin: ProfilePin::new(Port::B, 4),
+    active: ActiveLevel::Low,
+}];
+
+pub const PROFILE: BoardProfile = BoardProfile {
+    name: "ts011f-bl0942-pc2",
+    relay: Output {
+        pin: ProfilePin::new(Port::C, 2),
+        active: ActiveLevel::High,
+    },
+    leds: &LEDS,
+    button: Input {
+        pin: ProfilePin::new(Port::B, 5),
+        active: ActiveLevel::Low,
+        pull_up_ohms: Some(10_000),
+    },
+    metering: MeteringPins::Bl0942 {
+        uart_tx: ProfilePin::new(Port::B, 1),
+        uart_rx: ProfilePin::new(Port::B, 7),
+        baud: 4_800,
+    },
+};
 
 pub struct Bl0942Pins {
     pub tx: Pin,

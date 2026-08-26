@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "apps/plug-router",
     "boards/*",
     "drivers/*",
     "examples/mock-plug",
@@ -40,22 +41,24 @@ zigbee-plug-hardware = { path = "plug-hardware" }
 zigbee-plug-profile = { path = "zigbee-plug-profile" }
 zigbee-plug-storage = { path = "plug-storage" }
 embedded-storage = "0.3"
+efr32mg21-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9" }
 heapless = "0.9"
-tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "aeddd2af7d8f894200d5770d2ea4f61e2c1bb34c" }
-tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "aeddd2af7d8f894200d5770d2ea4f61e2c1bb34c" }
-zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "aeddd2af7d8f894200d5770d2ea4f61e2c1bb34c", features = ["tlsr8258", "hardware-aes"] }
-zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "aeddd2af7d8f894200d5770d2ea4f61e2c1bb34c" }
-# `default-features = false` drops the upstream `float32`/`float64` ZCL
-# defaults: no smart-plug cluster in this workspace carries a float ZCL
-# attribute (voltage/current/power/energy are all integer-scaled — see
-# `zigbee-plug-profile`), so the float codec is dead weight here. `router`
-# is the only feature these images need. This mirrors zigbee-rs's own
-# `examples/telink-tlsr8258-router` dependency wiring exactly; it is *not*
-# a size hack that weakens routing — `constrained-memory` is deliberately
-# left off so no parent/child table is shrunk.
-zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "aeddd2af7d8f894200d5770d2ea4f61e2c1bb34c", default-features = false, features = ["router"] }
-zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "aeddd2af7d8f894200d5770d2ea4f61e2c1bb34c" }
-zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "aeddd2af7d8f894200d5770d2ea4f61e2c1bb34c", default-features = false }
+router-app = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9", default-features = false }
+static_cell = "2"
+tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9" }
+tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9" }
+# Shared application/profile crates only need the platform-neutral trait.
+# Each standalone firmware root selects exactly its own backend/AES features.
+zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9" }
+zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9" }
+zigbee-aps = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9" }
+zigbee-crypto = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9" }
+# Shared crates stay role-neutral. Parent firmware enables `router` through
+# `plug-router-app/router`; the EFR32 proof therefore carries no routing,
+# parent, or child-table capacities.
+zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9", default-features = false }
+zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9" }
+zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

@@ -21,9 +21,10 @@
 //! hardware edge — the pulse counts accumulated for that window are an
 //! undercount, not a valid sample. This task has no logging transport to
 //! otherwise surface that condition, so it fails safe by discarding the
-//! whole window (see [`Outcome::OverflowDropped`]) rather than feeding a
+//! whole window (see [`MeterServiceOutcome::InputDropped`]) rather than feeding a
 //! silently-wrong sample to the controller/protection engine.
 
+use plug_router_app::{MeterService, MeterServiceOutcome};
 use tlsr8258_hal::capture::{self, CaptureError};
 use tlsr8258_hal::gpio::{GpioIrqSource, Pin};
 use tlsr8258_hal::timer;
@@ -51,20 +52,6 @@ const MAX_EVENTS_PER_POLL: u16 = 256;
 /// Switch CF1 between current- and voltage-sensing every two 1 s windows —
 /// the same cadence exercised by this repository's `bl0937` driver tests.
 const WINDOWS_PER_MODE: u8 = 2;
-
-/// This poll's result. Never blocks; the caller decides what to do next.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Outcome {
-    /// The current window has not elapsed yet.
-    Idle,
-    /// A completed window was converted to a sample.
-    Sample(ElectricalSample),
-    /// A completed window's pulse counts were discarded because the
-    /// software capture queue overflowed during it (see the module docs'
-    /// "Fail-safe overflow handling"). No sample was fed to the caller for
-    /// this window; the next window starts fresh.
-    OverflowDropped,
-}
 
 pub struct Bl0937Task {
     // Kept for the task's lifetime even though `capture::configure_channel`
@@ -131,7 +118,7 @@ impl Bl0937Task {
     }
 
     /// Restore the durable lifetime energy total read back from NV before
-    /// this task's first [`Self::poll`] — see `persistence.rs`.
+    /// this task's first [`Self::poll`].
     pub fn restore_energy_uwh(&mut self, total_uwh: u64) {
         self.driver.restore_total_energy_uwh(total_uwh);
     }
@@ -144,16 +131,19 @@ impl Bl0937Task {
 
     /// One bounded poll: drains queued capture events (bounded), and, once
     /// a full 1 s window has elapsed, converts the accumulated pulse
-    /// counts into a sample (or discards them — see [`Outcome`]).
-    pub fn poll(&mut self) -> Outcome {
+    /// counts into a sample (or discards them).
+    pub fn poll(&mut self) -> MeterServiceOutcome {
         self.drain_events();
 
         let now = timer::now_ticks();
         let elapsed = capture::elapsed_ticks(self.window_start_ticks, now);
         if elapsed < WINDOW_TICKS {
-            return Outcome::Idle;
+            return MeterServiceOutcome::Idle;
         }
-        self.window_start_ticks = self.window_start_ticks.wrapping_add(WINDOW_TICKS);
+        // Consume the complete aggregate interval and start the next window
+        // at the current hardware time. Advancing by only one nominal window
+        // would manufacture empty catch-up samples after a delayed poll.
+        self.window_start_ticks = now;
 
         let overflow_now = capture::overflow_count();
         let window_valid = overflow_now == self.overflow_baseline;
@@ -165,7 +155,7 @@ impl Bl0937Task {
         self.cf1_pulses = 0;
 
         if !window_valid {
-            return Outcome::OverflowDropped;
+            return MeterServiceOutcome::InputDropped;
         }
 
         // `elapsed` is always `>= WINDOW_TICKS > 0`, so `duration_us` here
@@ -183,9 +173,9 @@ impl Bl0937Task {
                 if let Some(level) = result.next_sel_high {
                     tlsr8258_hal::gpio::write(&self.sel, level);
                 }
-                Outcome::Sample(self.sample_from_result(result))
+                MeterServiceOutcome::Sample(self.sample_from_result(result))
             }
-            Err(_) => Outcome::Idle,
+            Err(_) => MeterServiceOutcome::Idle,
         }
     }
 
@@ -218,6 +208,20 @@ impl Bl0937Task {
                 _ => {}
             }
         }
+    }
+}
+
+impl MeterService for Bl0937Task {
+    fn restore_energy_uwh(&mut self, total_uwh: u64) {
+        Bl0937Task::restore_energy_uwh(self, total_uwh);
+    }
+
+    fn total_energy_uwh(&self) -> u64 {
+        Bl0937Task::total_energy_uwh(self)
+    }
+
+    fn service(&mut self, _now_ms: u32) -> MeterServiceOutcome {
+        self.poll()
     }
 }
 

@@ -19,8 +19,11 @@ name: Build TLSR8258 (tc32)
 
 on:
   push:
-    branches: [main]
     paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - "apps/**"
       - "firmware/tlsr8258-plug/**"
       - "link/**"
       - "scripts/tlsr8258-firmware.sh"
@@ -28,13 +31,17 @@ on:
       - "products/**"
       - "drivers/**"
       - "plug-core/**"
+      - "plug-hardware/**"
       - "plug-storage/**"
       - "plug-controller/**"
       - "zigbee-plug-profile/**"
       - ".github/workflows/build-tc32.yml"
   pull_request:
-    branches: [main]
     paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - "apps/**"
       - "firmware/tlsr8258-plug/**"
       - "link/**"
       - "scripts/tlsr8258-firmware.sh"
@@ -42,6 +49,7 @@ on:
       - "products/**"
       - "drivers/**"
       - "plug-core/**"
+      - "plug-hardware/**"
       - "plug-storage/**"
       - "plug-controller/**"
       - "zigbee-plug-profile/**"
@@ -56,17 +64,22 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # Same modern-tc32 toolchain release this repository's
   # `scripts/tlsr8258-firmware.sh` (and zigbee-rs's own tc32 CI) build
   # against.
   TC32_TOOLCHAIN_URL: https://github.com/modern-tc32/rust/releases/download/tc32-stage2-tc32-45/tc32-rust-toolchain-linux-amd64.tar.gz
+  TC32_TOOLCHAIN_SHA256: 916732a6f5e19da722e735cb267192dbd5dda155f0701287fab52a54b852c9b7
   TC32_TOOLCHAIN_DIR: ${{ github.workspace }}/.toolchains/tc32-stage2-tc32-45
 
 jobs:
   build:
     name: ${{ matrix.feature }} (${{ matrix.layout }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: zigbee-rs-plugs
     strategy:
       fail-fast: false
       matrix:
@@ -85,23 +98,43 @@ jobs:
             layout: 512k
 
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout plugs
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5, recorded 2026-08-25
+        with:
+          path: zigbee-rs-plugs
+          persist-credentials: false
+
+      - name: Cache tc32-45 toolchain
+        id: cache-tc32-toolchain
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4, recorded 2026-08-25
+        with:
+          path: ${{ env.TC32_TOOLCHAIN_DIR }}
+          key: tc32-toolchain-linux-amd64-${{ env.TC32_TOOLCHAIN_SHA256 }}
 
       - name: Install tc32-45 toolchain
+        if: steps.cache-tc32-toolchain.outputs.cache-hit != 'true'
         run: |
           mkdir -p "$TC32_TOOLCHAIN_DIR"
-          curl -fL --retry 3 "$TC32_TOOLCHAIN_URL" -o /tmp/tc32.tar.gz
+          curl --proto '=https' --tlsv1.2 -fL --retry 3 \
+            "$TC32_TOOLCHAIN_URL" -o /tmp/tc32.tar.gz
+          echo "$TC32_TOOLCHAIN_SHA256  /tmp/tc32.tar.gz" | sha256sum -c -
           tar -xzf /tmp/tc32.tar.gz --strip-components=1 -C "$TC32_TOOLCHAIN_DIR"
-          "$TC32_TOOLCHAIN_DIR/bin/rustc" --version --verbose
 
-      - name: Cache tc32 build artifacts
-        uses: actions/cache@v4
+      - name: Verify tc32-45 toolchain
+        run: |
+          "$TC32_TOOLCHAIN_DIR/bin/rustc" --version --verbose
+          "$TC32_TOOLCHAIN_DIR/bin/cargo" --version --verbose
+
+      # The compiler cache is keyed by the verified archive digest above.
+      # Do not cache target/ or OUT_DIR linker scripts; only immutable Cargo
+      # dependency downloads are reused below.
+      - name: Cache Cargo dependency downloads
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4, recorded 2026-08-25
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target/tc32-unknown-none-elf
-          key: tc32-45-${{ matrix.feature }}-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', 'firmware/tlsr8258-plug/Cargo.toml', 'link/*.x') }}
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-tc32-stage2-tc32-45-tc32-unknown-none-elf-${{ matrix.layout }}-${{ matrix.feature }}-${{ hashFiles('zigbee-rs-plugs/firmware/tlsr8258-plug/Cargo.lock', 'zigbee-rs-plugs/firmware/tlsr8258-plug/Cargo.toml', 'zigbee-rs-plugs/rust-toolchain.toml') }}
 
       - name: Build, layout + symbol gate, size metadata (EXPERIMENTAL, not hardware-proven)
         run: |
@@ -112,6 +145,8 @@ jobs:
       - name: Rename artifacts by product slug
         run: |
           mkdir -p target/tlsr8258-artifacts
+          cp "target/tc32-unknown-none-elf/release/tlsr8258-plug" \
+            "target/tlsr8258-artifacts/tlsr8258-plug-${{ matrix.feature }}.elf"
           cp "target/tc32-unknown-none-elf/release/tlsr8258-plug.bin" \
             "target/tlsr8258-artifacts/tlsr8258-plug-${{ matrix.feature }}.bin"
           # Size/budget/headroom + sha256 metadata emitted by the build
@@ -123,11 +158,12 @@ jobs:
           echo "::endgroup::"
 
       - name: Upload experimental firmware image + size metadata
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, recorded 2026-08-25
         with:
           name: tlsr8258-plug-${{ matrix.feature }}-${{ github.sha }}
           path: |
-            target/tlsr8258-artifacts/*.bin
-            target/tlsr8258-artifacts/*.size.json
+            zigbee-rs-plugs/target/tlsr8258-artifacts/*.elf
+            zigbee-rs-plugs/target/tlsr8258-artifacts/*.bin
+            zigbee-rs-plugs/target/tlsr8258-artifacts/*.size.json
           if-no-files-found: error
           retention-days: 30
