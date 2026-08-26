@@ -137,6 +137,8 @@ jobs:
           key: cargo-registry-${{ runner.os }}-tc32-stage2-tc32-45-tc32-unknown-none-elf-${{ matrix.layout }}-${{ matrix.feature }}-${{ hashFiles('zigbee-rs-plugs/firmware/tlsr8258-plug/Cargo.lock', 'zigbee-rs-plugs/firmware/tlsr8258-plug/Cargo.toml', 'zigbee-rs-plugs/rust-toolchain.toml') }}
 
       - name: Build, layout + symbol gate, size metadata (EXPERIMENTAL, not hardware-proven)
+        env:
+          TC32_TOOLCHAIN: ${{ env.TC32_TOOLCHAIN_DIR }}
         run: |
           ./scripts/tlsr8258-firmware.sh build \
             firmware/tlsr8258-plug tlsr8258-plug \
