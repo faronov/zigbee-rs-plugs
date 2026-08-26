@@ -37,7 +37,7 @@ The locked release build and verifier currently report:
 
 | Measurement | Value |
 |---|---:|
-| Flash payload / linked span | 198,096 B / 198,096 B |
+| Flash payload / linked span | 198,092 B / 198,096 B |
 | Application region | 475,136 B (`0x4000..0x78000`) |
 | Flash headroom before application journal | 279,232 B |
 | Static RAM (`data+bss`) | 18,576 B |

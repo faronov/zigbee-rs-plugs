@@ -1,7 +1,7 @@
 # zigbee-rs-plugs
 
 Pure-Rust, heap-free smart-plug products built on
-[`zigbee-rs@002d479`](https://github.com/faronov/zigbee-rs/tree/002d47923ab910afd46b771cc1b4d2eaee1696c9).
+[`zigbee-rs@1d7df8f`](https://github.com/faronov/zigbee-rs/tree/1d7df8ffbaa794ecca27c1e082c1c023b0094ca7).
 
 This development branch is the plug-side proof of the cross-platform
 application model. It keeps application/profile behavior, product policy,
@@ -94,7 +94,7 @@ docs/                   architecture, hardware, evidence, and safety
 ## Development checkout
 
 The manifests pin every core/HAL dependency to immutable `zigbee-rs` commit
-[`002d47923ab910afd46b771cc1b4d2eaee1696c9`](https://github.com/faronov/zigbee-rs/commit/002d47923ab910afd46b771cc1b4d2eaee1696c9).
+[`1d7df8ffbaa794ecca27c1e082c1c023b0094ca7`](https://github.com/faronov/zigbee-rs/commit/1d7df8ffbaa794ecca27c1e082c1c023b0094ca7).
 Cargo fetches that revision directly; an adjacent core checkout is not
 required.
 
@@ -126,7 +126,7 @@ The two firmware roots are validated separately:
   ```
 
 Development links in these documents intentionally target the reviewed
-[`002d479`](https://github.com/faronov/zigbee-rs/tree/002d47923ab910afd46b771cc1b4d2eaee1696c9)
+[`1d7df8f`](https://github.com/faronov/zigbee-rs/tree/1d7df8ffbaa794ecca27c1e082c1c023b0094ca7)
 core revision.
 The public zigbee-rs GitHub Pages book is deployed from the core repository's
 main/deploy path, so it will not describe this migration until the core branch

@@ -15,9 +15,9 @@ boundaries.
 - EFR32 proof product/layout:
   [`products/plug-efr32-proof`](../products/plug-efr32-proof/).
 - Core router frontend:
-  [`apps/router@002d479`](https://github.com/faronov/zigbee-rs/tree/002d47923ab910afd46b771cc1b4d2eaee1696c9/apps/router).
+  [`apps/router@1d7df8f`](https://github.com/faronov/zigbee-rs/tree/1d7df8ffbaa794ecca27c1e082c1c023b0094ca7/apps/router).
 - Core runtime, EFR32/TLSR8258 HALs, and MAC backends:
-  [`faronov/zigbee-rs@002d479`](https://github.com/faronov/zigbee-rs/tree/002d47923ab910afd46b771cc1b4d2eaee1696c9).
+  [`faronov/zigbee-rs@1d7df8f`](https://github.com/faronov/zigbee-rs/tree/1d7df8ffbaa794ecca27c1e082c1c023b0094ca7).
 
 The manifests pin this exact core revision as a Git dependency. The public
 zigbee-rs GitHub Pages book reflects the deployed main branch and will not show

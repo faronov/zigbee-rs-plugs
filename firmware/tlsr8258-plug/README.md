@@ -34,7 +34,7 @@ products explicitly enable parent capability.
 ## Required core revision and toolchain
 
 The manifests fetch the core crates from immutable `zigbee-rs` revision
-[`002d47923ab910afd46b771cc1b4d2eaee1696c9`](https://github.com/faronov/zigbee-rs/tree/002d47923ab910afd46b771cc1b4d2eaee1696c9);
+[`1d7df8ffbaa794ecca27c1e082c1c023b0094ca7`](https://github.com/faronov/zigbee-rs/tree/1d7df8ffbaa794ecca27c1e082c1c023b0094ca7);
 no adjacent checkout is required.
 The public core GitHub Pages book will not include this model until the branch
 is merged and Pages is deployed.
@@ -140,12 +140,12 @@ not stable release identifiers or hardware proof.
 
 | Product | Image | Headroom to `0x70000` | RAM code | SHA-256 |
 |---|---:|---:|---:|---|
-| `tz3000-gjnozsaz-1m` | 371,400 B | 87,352 B | 4,836 B | `20cbfc70a96b1689824a4fcea9571b1b56c6b312b3efa7090d1cb8ebcec6e75a` |
-| `tz3000-gjnozsaz-512k` | 371,396 B | 87,356 B | 4,840 B | `750866b6dd57c1a200a6ccd02e23aa1391aa59eb1f8d3be311270c7c22a4260e` |
-| `tz3000-w0qqde0g` | 371,400 B | 87,352 B | 4,836 B | `61d7c0376235cd5ad7ed17a3535e5a2c7da5a8ac2ca339c3a927a39384b135cc` |
-| `tz3000-zloso4jk` | 371,400 B | 87,352 B | 4,836 B | `ce909d75a11368fe353038b0f8abab3b761e8c9ee311abea088c12f98e630cd9` |
-| `legacy-bl0937-pd6` | 377,864 B | 80,888 B | 5,120 B | `db6acb53a16405747fc9e0155d218e63617ffffd203e99ef95f2ef5a4cb1945e` |
-| `zbeacon-ts011f-512k` | 377,980 B | 80,772 B | 5,124 B | `520091b146eaba8a72ad4e1a3767786412086ec48b1c96947502095d4ce77e1a` |
+| `tz3000-gjnozsaz-1m` | 371,400 B | 87,352 B | 4,836 B | `76083cab7b0b5fc43d55b3498f14d3ba2e0499bbe7ac013a83706c6a58d31846` |
+| `tz3000-gjnozsaz-512k` | 371,396 B | 87,356 B | 4,840 B | `bcd7050bae94640a7e382e8b3f507e9bbcbb5152939eb39e65ac40da5e98ae7c` |
+| `tz3000-w0qqde0g` | 371,400 B | 87,352 B | 4,836 B | `0b378978c209cd3e569b0d7337e68c0c80d771f8768cd114e82e9e870e362251` |
+| `tz3000-zloso4jk` | 371,400 B | 87,352 B | 4,836 B | `c083eec6d4427b29bd69d4ffc70ac4d8eaffb2ab9145f4e13fb5d45b9dac3bed` |
+| `legacy-bl0937-pd6` | 377,864 B | 80,888 B | 5,120 B | `ae09d6f87b0b3d505bb22ff0cb07e653f0b3e06aa87d54ba9b7f8dc6a9e3fcc7` |
+| `zbeacon-ts011f-512k` | 377,980 B | 80,772 B | 5,124 B | `d91921d8f54466ffa19fa91692db3299c27a9da8b15a68e85a51be33eba85462` |
 
 Use the generated `*.size.json` from a particular build as the source of
 truth for that artifact.

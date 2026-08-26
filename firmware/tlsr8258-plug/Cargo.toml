@@ -36,8 +36,8 @@ zbeacon-ts011f-512k = ["dep:zbeacon-ts011f-512k", "dep:tlsr8258-zbeacon-ts011f-b
 # crate is excluded from the root workspace (see its own `[package]`
 # comment above), so it cannot use `workspace = true` field inheritance.
 # Every stack/HAL dependency is pinned to the reviewed core migration commit.
-zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9" }
-zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9" }
+zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
+zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
 # `default-features = false` on both `zigbee-zcl` and `zigbee-runtime`
 # drops the upstream `float32`/`float64` ZCL codec (unused by any smart-plug
 # cluster — all electrical/metering attributes are integer-scaled) and
@@ -45,14 +45,14 @@ zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d4792
 # `examples/telink-tlsr8258-router` wiring. `constrained-memory` is
 # deliberately NOT enabled: this is a mains-powered parent router, and no
 # child/route/neighbour table may be shrunk to save flash.
-zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9", default-features = false }
-zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9", features = ["tlsr8258", "hardware-aes"] }
-zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9", default-features = false, features = ["router"] }
-router-app = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9", features = ["router"] }
+zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7", default-features = false }
+zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7", features = ["tlsr8258", "hardware-aes"] }
+zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7", default-features = false, features = ["router"] }
+router-app = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7", features = ["router"] }
 
 # Platform.
-tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9" }
-tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "002d47923ab910afd46b771cc1b4d2eaee1696c9" }
+tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
+tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
 
 # Application/profile (shared, generic — no product/board knowledge).
 zigbee-plug-core = { path = "../../plug-core" }
