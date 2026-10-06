@@ -1,22 +1,11 @@
-//! Shared commissioning-loop plumbing for both product families' router
-//! loops (`bl0942_app.rs`/`bl0937_app.rs`).
+//! Shared TLSR8258 startup plumbing for both product families.
 //!
-//! Kept intentionally minimal: the board types differ in pins and metering
-//! peripherals, so the full board/product/task wiring stays in each app
-//! module. This module only shares what generalizes over any
-//! `ZigbeeNode<M, S, P, R>`, following `zigbee-rs`'s own
-//! `examples/telink-tlsr8258-router` control flow except that the Basic
-//! cluster's Reset to Factory Defaults event remains distinct from a Zigbee
-//! network factory reset.
+//! Network lifecycle is owned by `plug-router-app` layered on
+//! `router-app::ParentRouterApp`; this module retains only geometry-aware
+//! MAC and flash-voltage setup.
 
 use tlsr8258_hal::flash::FlashGeometry;
-use zigbee_mac::MacDriver;
 use zigbee_mac::telink::TelinkMac;
-use zigbee_runtime::event_loop::{StackEvent, StartError};
-use zigbee_runtime::node::ZigbeeNode;
-use zigbee_runtime::profile::ApplicationProfile;
-use zigbee_runtime::role::DeviceRole;
-use zigbee_runtime::security_store::SecurityStateStore;
 
 /// Construct a [`TelinkMac`] from the product's declared flash capacity,
 /// using the upstream geometry-aware factory-identity primitives
@@ -123,58 +112,5 @@ pub fn install_flash_voltage_guard(
     match tlsr8258_hal::adc::Adc::new(adc, geometry) {
         Ok(adc) => adc.install_flash_voltage_guard(pin).is_ok(),
         Err(_) => false,
-    }
-}
-
-/// What the main commissioning loop should do next after handling one
-/// [`StackEvent`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoopControl {
-    /// Keep running the current commissioning session.
-    Continue,
-    /// Restart from the outer commissioning loop (rejoin/re-steer).
-    Recommission,
-    /// Unrecoverable: the caller should enter its own failure state.
-    Fatal,
-}
-
-/// Apply one stack event's required side effect (secure rejoin, leave/
-/// factory reset, or falling back to recommissioning for every other
-/// network-loss event).
-///
-/// Role-generic over `R` (see [`zigbee_runtime::role`]): a plug image only
-/// ever instantiates this for [`zigbee_runtime::role::Router`], but keeping
-/// the bound at [`DeviceRole`] matches the upstream reference loop's own
-/// role-generic `apply_stack_event` and avoids baking the parent role into
-/// this shared helper.
-pub async fn apply_stack_event<M, S, P, R>(
-    node: &mut ZigbeeNode<'_, M, S, P, R>,
-    event: StackEvent,
-) -> LoopControl
-where
-    M: MacDriver,
-    S: SecurityStateStore,
-    P: ApplicationProfile,
-    R: DeviceRole,
-{
-    match event {
-        StackEvent::RejoinRequested => match node.secure_rejoin().await {
-            Ok(_) => LoopControl::Continue,
-            Err(StartError::PersistenceFailed(_)) => LoopControl::Fatal,
-            Err(_) => LoopControl::Recommission,
-        },
-        StackEvent::LeaveRequested => match node.factory_reset().await {
-            Ok(()) => LoopControl::Recommission,
-            Err(_) => LoopControl::Fatal,
-        },
-        StackEvent::BasicResetToFactoryDefaults => {
-            // The Basic cluster already reset its writable attributes.
-            // It must not erase Zigbee network credentials.
-            LoopControl::Continue
-        }
-        StackEvent::Left | StackEvent::CommissioningComplete { success: false } => {
-            LoopControl::Recommission
-        }
-        _ => LoopControl::Continue,
     }
 }

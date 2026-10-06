@@ -1,0 +1,29 @@
+[package]
+name = "plug-efr32-proof-product"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Development-only BRD4181A always-on End Device smart-plug product"
+publish = false
+
+[dependencies]
+efr32mg21-brd4181a-plug = { path = "../../boards/efr32mg21-brd4181a-plug" }
+efr32mg21-hal.workspace = true
+embedded-storage.workspace = true
+plug-router-app = { path = "../../apps/plug-router", default-features = false }
+router-app.workspace = true
+static_cell.workspace = true
+zigbee-aps.workspace = true
+zigbee-crypto.workspace = true
+zigbee-plug-core.workspace = true
+zigbee-plug-profile.workspace = true
+zigbee-runtime.workspace = true
+zigbee-zcl.workspace = true
+
+[dev-dependencies]
+zigbee-mac = { workspace = true, features = ["mock"] }
+zigbee-nwk.workspace = true
+
+[lints]
+workspace = true

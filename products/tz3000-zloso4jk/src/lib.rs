@@ -3,15 +3,12 @@
 #[cfg(target_arch = "tc32")]
 pub mod storage;
 
-use zigbee_plug_hardware::{
-    Evidence, ProductProfile, StockOtaFingerprint, TLSR8258_1M_LAYOUT, TS011F_BL0942_PC2,
-};
+use zigbee_plug_hardware::{Evidence, ProductProfile, StockOtaFingerprint, TLSR8258_1M_LAYOUT};
 
 pub const PRODUCT: ProductProfile = ProductProfile {
     slug: "tz3000-zloso4jk",
     stock_manufacturer: Some("_TZ3000_zloso4jk"),
     stock_model: "TS011F",
-    board: &TS011F_BL0942_PC2,
     flash: TLSR8258_1M_LAYOUT,
     stock_ota: Some(StockOtaFingerprint {
         manufacturer_code: 0x1141,

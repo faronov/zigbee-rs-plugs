@@ -1,271 +1,328 @@
-# Architecture
+# Cross-platform plug architecture
 
-The repository follows the same ownership split as `zigbee-rs`:
+This branch moves the smart-plug lifecycle out of platform firmware and into a
+shared, statically composed application model.
 
-1. Metering drivers accept bytes or pulse counts and have no board knowledge.
-2. Board crates own physical GPIOs and encode active levels.
-3. Product crates select one board, flash geometry, and stock identity.
-4. `zigbee-plug-core` owns safety and persistence *policy* (protection
-   engine and CRC-protected energy/relay record formats) independent of
-   any chip.
-5. `zigbee-plug-storage` owns TLSR8258 flash-partition *mechanism*: it turns
-   a board's single `OnboardFlash` token into the product's application-NV
-   and Zigbee security-journal accessors (see below).
-6. `zigbee-plug-profile` maps validated measurements into standard Zigbee
-   clusters.
-7. `zigbee-plug-controller` owns the shared, host-testable device-behavior
-   composition (relay desired/actual reconciliation, button debounce,
-   LED policy, protection-engine wiring, command/trip/latch semantics)
-   used by every product's firmware — no per-product or per-chip code.
-8. `firmware/tlsr8258-plug` is the single no_std/no_main firmware crate that
-   composes exactly one product target at compile time (one of six
-   mutually exclusive Cargo features) into a production BDB/ZCL router
-   loop, adapted from `zigbee-rs`'s
-   `examples/telink-tlsr8258-router`. It is excluded from this workspace
-   (see "Firmware crate" below) but still built from shared, reusable
-   modules (metering tasks, persistence, router support) with no
-   per-product branching beyond the feature-selected board/product crate.
+The dependency direction is:
 
-Product selection is intentionally compile-time. Runtime guessing between
-different relay pins, metering ICs, or flash layouts can energize a relay or
-erase factory data on the wrong PCB.
+```text
+application/profile  endpoint, clusters, relay/protection/meter behavior
+product              identity, profile/policy selection, layout, persistence
+board                fitted pins and exclusive physical resources
+platform/chip HAL    clocks, GPIO, timers, flash controller, AES, radio
+```
 
-## Controller crate (`plug-controller`)
+The protocol path remains:
 
-`zigbee_plug_controller::PlugController` is the one, chip-independent place
-that composes:
+```text
+ZigbeePlug profile
+        |
+plug-router-app
+        |
+router-app -> zigbee-runtime -> BDB/ZCL/ZDO/APS/NWK/MAC
+        |
+platform MAC/HAL
+```
 
-- `zigbee_plug_profile::ZigbeePlug` plus
-  `zigbee_plug_core::ProtectionEngine` (relay desired/actual state and
-  protection latch),
-- button debounce, short-press relay toggle, and one-shot four-second local
-  network factory-reset gesture,
-- network-status LED policy (dark while offline, one-hertz blink while
-  commissioning/rejoining, follows the relay while joined, solid on fault),
-- `ZigbeePlug`'s ZCL On/Off mandatory 100 ms timers, and
-- electrical-sample ingestion that feeds the protection engine.
+## Ownership boundaries
 
-Its invariant, enforced by host tests: a remote or local On command can never
-energize the relay while protection is tripped. Non-voltage trips require an
-explicit latch-clear; voltage auto-restart occurs only when a product
-explicitly enables it, and is off by default. Every router loop
-(`bl0942_app.rs`, `bl0937_app.rs`) calls the same `PlugController` API after
-every incoming Zigbee frame and every controller tick; no router loop
-reimplements relay/trip logic itself.
+### Application and profile
 
-## Firmware crate (`firmware/tlsr8258-plug`)
+- `zigbee-plug-profile` owns the reusable Smart Plug endpoint and its On/Off,
+  Electrical Measurement, and Metering mapping.
+- `plug-core` and `plug-controller` own chip-independent settings, protection,
+  button/LED behavior, relay reconciliation, and persistent record formats.
+- [`apps/plug-router`](../apps/plug-router/) owns the common router lifecycle
+  described below. It knows only narrow capabilities (`LocalControl`,
+  `MeterService`, `PlugClock`, and `NvStorage`), never GPIO registers or a
+  concrete flash device.
 
-`firmware/tlsr8258-plug` is a `no_std`/`no_main` binary crate excluded from
-this Cargo workspace (it targets `tc32`, which the host toolchain cannot
-build or lint). It selects exactly one of six mutually exclusive Cargo
-features — one per product in `products/` — and fails to compile if zero or
-more than one is selected (`compile_error!` in `src/main.rs`). The four
-BL0942 products share one router loop (`bl0942_app.rs`) and metering task
-(`bl0942_task.rs`); both BL0937 products share a separate loop
-(`bl0937_app.rs`) and capture-based metering task (`bl0937_task.rs`), while
-retaining distinct board crates, since their measurement chip has no UART
-and instead requires two edge-capture
-channels. Product model/manufacturer identity and flash layout always come
-from the selected product crate — the firmware never fingerprints hardware
-at runtime to infer which product it is.
+### Product
 
-Both router loops start Timer0 before constructing the MAC, ADC guard, or
-persistence stack. Their controller/metering/checkpoint timestamps use
-`TickMillis` to extend Timer0's roughly 179-second raw counter wrap into a
-normal wrapping `u32` millisecond clock; directly dividing the raw counter
-would reset application time on every hardware wrap.
+A product contract owns the concrete identity, flash geometry and partitions,
+storage journals, application policy/profile selection, calibration, and role
+limits. A product may select a reusable shared profile without copying it.
+For example:
 
-`local_control.rs` owns the relay, status LED, and button GPIO tokens after
-startup and services them from a dedicated 10 ms Timer1 interrupt. This keeps
-short-press relay control independent of BDB/MAC progress even while the
-single-threaded Telink operations are inside bounded synchronous waits. The
-interrupt only updates physical state and small flags; the main loop later
-reconciles a local relay selection into the ZCL OnOff attribute. Protection
-remains authoritative, and a four-second hold requests network factory reset
-without first toggling the relay.
+- each TLSR8258 product crate selects one `FlashLayout`, one board, and opens
+  the child/application/security stores over that layout; the composition root
+  instantiates the shared `ZigbeePlug` profile, while product-specific
+  calibration/protection comes from the product when present;
+- `plug-efr32-proof-product` owns the proof identity, always-on End Device
+  policy, synthetic development meter, application/security journals, and
+  `products/plug-efr32-proof/link/memory.x`.
 
-`persistence.rs` is shared by both loops: it restores the last checkpointed
-relay/energy state from the product's `ApplicationNv` before BDB profile
-startup, and writes a new CRC-protected, sequence-numbered checkpoint only
-when the relay state changes or a bounded interval has elapsed (not every
-tick), to bound flash wear. A checkpoint write error is never discarded —
-every router loop treats it exactly like every other storage error (open
-failure, security-store failure): fail closed, relay forced off, LED forced
-on, spin forever with no further flash access. See "Voltage-guard fail-closed
-gate" in `firmware/tlsr8258-plug/README.md` for why no Zbit flash-voltage
-value is ever fabricated to work around this.
+Shared layout catalogs and journal implementations may be reused, but the
+product remains the call site that selects them. A board never chooses a model
+string, security policy, or protected partition.
 
-`build.rs` copies the product-selected canonical linker script
-(`link/tlsr8258-512k.x` or `link/tlsr8258-1m.x`, matching the selected
-product's `FlashLayout`) into `OUT_DIR` — never editing the checked-in
-`memory.x`/`link/*.x` sources — unless `TLSR8258_LINKER_SCRIPT` is set (used
-by `scripts/tlsr8258-firmware.sh` to point at an explicit, already-staged
-script).
+### Board
 
-See `.github/workflows/build-tc32.yml` for the six-way product matrix CI that
-exercises this crate's full build / layout-check / symbol-gate / size-report
-path (host CI in `ci.yml` is unaffected, since this crate stays
-workspace-excluded), and `firmware/tlsr8258-plug/README.md`'s "Hardware
-gates" section for the remaining physical validation boundary.
+A board crate describes only fitted hardware and hands out single-owner typed
+resources:
 
+- exact relay, LED, button, meter, and voltage-guard pins;
+- peripheral ownership tokens such as UART, ADC, AES, clocks, or internal
+  flash;
+- active levels and conservative initial GPIO configuration.
 
-## Upstream dependency
+Board crates do not depend on `zigbee-runtime` or `plug-router-app`. The board
+may expose an exclusive physical flash token, but the product decides how that
+flash is partitioned and what persistence policy uses it.
 
-All `zigbee-rs` crates are pinned to commit
-`aeddd2af7d8f894200d5770d2ea4f61e2c1bb34c`. The pin includes calibrated
-Electrical Measurement scaling, restoration of the 48-bit Simple Metering
-energy counter, the complete reusable TLSR8258 HAL consumed by the firmware,
-the typed device-role model (`zigbee_runtime::role`), the complete persisted
-R22 parent lifecycle, and corrected many-to-one/source routing required by a
-parent router. It also includes the bounded GSDK-style TCLK exchange, normal
-coordinator-initiated leave handling, and the address-conflict correction that
-does not confuse a relay's auxiliary-security IEEE with the original NWK
-source.
+### Firmware composition root
 
-**Typed `Router` role.** A mains-powered plug is a genuine parent
-`Router`, so both router loops name the `zigbee_runtime::role::Router` role
-(`ZigbeeDevice<TelinkMac, Router>`) and construct it through
-`DeviceBuilder::build_router_into` — bounded on `zigbee_mac::ParentMacDriver`,
-which `TelinkMac` implements — never the default leaf `EndDevice` or the
-forwarding-only `RelayRouter`. Upstream splits each role's runtime by static
-dispatch: a `Router` monomorphization links the parent/child-serving path and
-holds `ParentState`, while the R22 End Device Timeout **client** lifecycle is
-owned exclusively by `EndDevice` and is therefore never compiled into these
-images. The shared helpers (`router_support::apply_stack_event`,
-`ZigbeePlug::configure_default_reporting`) stay generic over the role `R` so
-host tests can still exercise the profile through other roles, matching the
-upstream reference loop's own role-generic signatures.
+Firmware `main.rs`/platform modules:
 
-**`default-features = false`.** `zigbee-zcl` and `zigbee-runtime` are pulled
-with `default-features = false, features = ["router"]`, dropping the upstream
-`float32`/`float64` ZCL codec: every smart-plug electrical/metering attribute
-is integer-scaled, so the float codec is dead weight here. This mirrors
-zigbee-rs's own `examples/telink-tlsr8258-router` wiring. `constrained-memory`
-is deliberately **not** enabled — a mains-powered parent router must not shrink
-any child/route/neighbour table to save flash.
+1. initialize the chip and take the board resources;
+2. install the selected MAC/crypto/clock mechanisms;
+3. ask the product to construct profile, policy, and storage;
+4. construct the typed router frontend and shared plug app;
+5. enter the platform event loop.
 
-BL0942's raw `CF_CNT` is only 24 bits. Firmware must pass it through
-`bl0942::EnergyTracker`, persist `total_uwh` in an `EnergyRecord`, and restore
-that lifetime total after reboot. The raw counter-derived reading is never
-published directly as Zigbee `CurrentSummationDelivered`.
+The firmware roots do not reimplement commissioning, reset, reporting,
+protection, metering checkpoints, or child persistence.
 
-## Flash partitioning and persistence
+## `PlugRouterApp` and `AlwaysOnEndDevicePlugApp`
 
-`zigbee-plug-hardware::FlashLayout` is the single Rust-side catalog of every
-TLSR8258 product's flash partitions (`TLSR8258_512K_LAYOUT`,
-`TLSR8258_1M_LAYOUT`): firmware ends before `0x72000`; the product-owned
-application-NV log occupies `0x72000..0x74000`; the Zigbee security-counter
-journal occupies `0x74000..0x76000`; factory/read-only data begins at
-`0x76000` (512 KiB parts) or `0xFE000` (1 MiB parts). 1 MiB parts also
-document a `0x96000..0xFC000` candidate energy-journal region that stays
-disabled and read-only — no product may treat it as available flash until it
-has its own verified staging, identity, and activation policy.
+Both public wrappers in `plug-router-app` own the same private `PlugCore`.
+Their only difference is the statically selected network frontend.
 
-`zigbee-plug-storage` turns that catalog into the type-safe mechanism every
-product uses:
+### `PlugRouterApp`
 
-- Each board crate (`tlsr8258-legacy-bl0937`, `tlsr8258-ts011f-bl0942`)
-  exposes its own zero-sized `OnboardFlash` token, constructible only inside
-  that board's singleton-gated `BoardResources::take()`.
-- `zigbee_plug_storage::split_onboard_flash` consumes that token by value
-  once and returns disjoint `AppNvPartition`/`SecurityPartition` tokens.
-  Because the board token cannot be cloned and each partition token is
-  itself consumed exactly once, a product cannot construct two overlapping
-  raw-flash accessors over the same onboard flash.
-- `OnboardFlashToken` is sealed so only genuine board tokens satisfy it —
-  not an arbitrary caller-supplied zero-sized type.
-- The `zigbee_plug_storage::flash` module (compiled only for
-  `target_arch = "tc32"`) wires those partition tokens into
-  `zigbee_runtime::log_nv::LogStructuredNv` (application NV) and
-  `zigbee_runtime::security_journal::SecurityStateJournal` (security
-  counters) over `tlsr8258_hal::flash::Tlsr8258Flash`.
-- Each product's `src/storage.rs` (tc32-gated) is the product-owned call
-  site that picks its board's `OnboardFlash` and its `FlashLayout` constant
-  and opens both stores.
+`PlugRouterApp` wraps
+[`router_app::ParentRouterApp`](https://github.com/faronov/zigbee-rs/blob/14ba6df7309602cc31a08e97667c732d61b9580d/apps/router/src/app.rs).
+It requires:
 
-The canonical linker scripts in `link/` (`tlsr8258-512k.x`, `tlsr8258-1m.x`)
-carry the proven TLSR8258 cache/RAM/RF-DMA layout from
-`zigbee-rs`'s `products/tlsr8258-tb04/link/memory.x` unmodified, export the
-same partition boundaries as linker symbols (`_app_nv_*`, `_security_nv_*`,
-`_factory_data_*`, `_flash_capacity_`, and — 1 MiB only —
-`_candidate_energy_*`), and `ASSERT` at link time that the firmware image
-ends at or before `_app_nv_start_` and that every partition is disjoint and
-ascending. See `link/README.md` for why two shared scripts cover every
-product instead of one per product, and how a future firmware crate's
-`build.rs` should select between them.
+- a `ParentMacDriver`;
+- the typed `zigbee_runtime::role::Router`;
+- a `ChildTableStore`, normally through `PersistentChildren`.
 
-`scripts/tlsr8258-firmware.sh` is a host-side build/check helper (no `flash`
-subcommand) that stages the selected canonical script, builds with bounded
-release flags, and independently re-verifies the same boundaries plus the
-RAM/cache/RF-DMA symbols from the produced ELF via `llvm-nm`. It also runs a
-typed-`Router` **symbol gate** on the linked ELF — asserting the parent path
-is present (`zigbee_runtime::role::Router`, `handle_child_rejoin_request`,
-`nlme_start_router`) and that no leaf/relay code leaked in (the `EndDevice`/
-`RelayRouter` roles and every End Device Timeout *client* method are absent) —
-and writes a per-product `*.size.json` (image size, the app-NV-start budget,
-remaining headroom, partition addresses, and the `.bin` sha256) that
-`build-tc32.yml` uploads alongside each image. All six product features have
-been compiled, linked, converted to `.bin`, layout-checked, symbol-gated, and
-size-reported with the modern-tc32 toolchain. Host tests additionally cover
-the storage token split and bounds arithmetic. Physical flash writes,
-security-counter durability, and journal rollover remain hardware gates.
+It therefore links child admission/serving and restores a durable child table
+before parent service begins. All six TLSR8258 products use this composition.
 
-## Hardware gates
+### `AlwaysOnEndDevicePlugApp`
 
-BL0942 firmware uses a TLSR8258 UART driver for PB1 TX/PB7 RX at 4800 baud,
-8 data bits, no parity, one stop bit (`tlsr8258_hal::uart::Uart`, an
-upstream API this repository consumes but does not implement).
+`AlwaysOnEndDevicePlugApp` wraps
+[`router_app::AlwaysOnEndDeviceApp`](https://github.com/faronov/zigbee-rs/blob/14ba6df7309602cc31a08e97667c732d61b9580d/apps/router/src/app.rs).
+It needs only `MacDriver`, and its role is statically
+`zigbee_runtime::role::EndDevice`.
 
-BL0937 firmware uses two edge-capture channels (`tlsr8258_hal::capture`):
-PB5/PB6 on `legacy-bl0937-pd6`, or PB4/PB5 on
-`zbeacon-ts011f-512k`. Both count rising edges in fixed 1 s windows and feed
-`bl0937::Bl0937`; a software capture overflow is reported explicitly
-(`bl0937_task::Outcome::OverflowDropped`) rather than silently dropped or
-interpolated.
+This is a receiver-on-when-idle, mains-powered leaf. It joins and rejoins
+through a parent but neither routes nor admits children. The EFR32 proof uses
+it because `Efr32s2Mac` does not implement `ParentMacDriver`, avoiding the
+previous non-conformant Router claim. Its manifests also leave the
+`zigbee-runtime/router` feature disabled, so route, parent, and child-table
+capacities are absent rather than merely unused. The product allocates no
+child journal.
 
-Both APIs, and the TLSR8258 timer/IRQ/ADC internals they depend on, are in
-the published `zigbee-rs` commit pinned by this repository. No local
-`[patch]` is required. Host CI resolves the same revision, while the TC32
-workflow compiler-verifies the complete UART/capture/ADC firmware paths for
-every product.
+### Shared `PlugCore` behavior
 
-### Factory-identity gate for non-512 KiB products
+The private core is the single implementation of:
 
-`firmware/tlsr8258-plug/src/router_support.rs`'s `mac_for_product` closes
-the multi-geometry identity risk at runtime: it resolves
-`FlashGeometry::from_capacity(product_flash_capacity)`, then calls
-`factory_ieee_for(geometry, &mut address)` (which itself verifies the
-JEDEC ID against the requested geometry before reading, returning
-`Err(FlashError)` on mismatch) and `TelinkMac::new_for_flash_geometry`,
-returning `None` — treated as a fail-closed startup failure by both
-`bl0942_app.rs` and `bl0937_app.rs` — for any unsupported capacity or
-geometry/JEDEC mismatch. There is no per-product-family byte offset
-applied to the resolved address (see "No EUI mutation" below); the
-factory/flash-UID-derived EUI-64 is used unchanged, and is also what
-`reset_security_state_if_identity_changed` compares against previously
-persisted state.
+- application-state restore and startup relay reconciliation;
+- local button selection copied into the ZCL OnOff attribute, then
+  acknowledged back to the platform service;
+- unconditional protection veto after local and network commands;
+- startup relay interlock until the first safe electrical sample;
+- fail-closed meter-health latching for dropped/reset/stale input;
+- the mandatory 100 ms On/Off tick;
+- one bounded, nonblocking meter service per application step;
+- electrical-sample delivery to the protection engine;
+- relay-change or 60-second application-state checkpoints;
+- network-status-to-LED mapping;
+- synchronous physical relay-off acknowledgement before local or
+  network-requested factory-reset persistence/network work;
+- deferred network reset commit so application Off is durable before security
+  state and the parent child journal are cleared;
+- interrupt-owned sticky relay inhibits for long-press and meter deadlines
+  while Zigbee futures are awaiting;
+- network-aware short-press handling: the main loop publishes the joined
+  state to the platform button service and resolves its commissioning
+  requests (see [Button and commissioning](#button-and-commissioning)).
 
-All six products build reproducibly against the pinned upstream commit.
-The four 1 MiB products' post-link layout check reports
-`factory_data=[0xFE000..0x100000)`, not the 512 KiB sector. The corresponding
-ADC-calibration address is active:
-`router_support::install_flash_voltage_guard` now calls
-`tlsr8258_hal::adc::Adc::new(adc, geometry)` (which loads the matching
-factory ADC calibration for the product's geometry) before installing the
-real Zbit flash-voltage guard. The remaining gate is electrical: PC5's
-actual connection to a meaningful voltage-sense node on any of the three
-physical board families has not been confirmed by schematic or measurement.
+The finite `step()` sequence is intentionally observable and host-tested.
+Platform-specific Timer1/SysTick code only implements `LocalControl`; it does
+not own ZCL or network state.
 
-### No EUI mutation
+## Platform compositions
 
-Earlier drafts added a per-product-family byte offset
-(`wrapping_add(0x42)`/`0x37`) to the resolved factory EUI-64's first
-octet, intended to avoid address collisions between differently-reflashed
-firmware images. This was removed: only one firmware image ever runs on
-a given physical part at a time, so there is no real collision to avoid,
-and the mutation corrupts OUI/U-L-bit structure and forces a spurious new
-Zigbee identity on every reflash. The factory/flash-UID-derived address
-is used unchanged.
+### TLSR8258 parent plugs
 
-OTA remains disabled until each flash geometry has a verified dump,
-bootloader activation path, staging partition, and unique image identity.
+`firmware/tlsr8258-plug` selects exactly one of six product features. Its two
+family composition modules differ only in fitted meter construction:
+
+- BL0942 products construct PB1/PB7 UART metering;
+- BL0937 products construct the appropriate pulse-capture pins and product
+  calibration.
+
+Both build `ParentRouterApp + PersistentChildren + PlugRouterApp`. Timer0
+provides the application clock; Timer1 provides the independent 10 ms
+button/relay/LED and relative meter-watchdog service. The product owns
+identity, layout, and three stores.
+
+### EFR32MG21 BRD4181A relay proof
+
+`firmware/plug-efr32-proof` builds:
+
+```text
+Efr32s2Mac
+  + ZigbeeDevice<_, EndDevice>
+  + AlwaysOnEndDeviceApp
+  + AlwaysOnEndDevicePlugApp
+```
+
+It is configured `PowerMode::AlwaysOn`. The board supplies PD2, PB0,
+PC3/EXP10, clocks, and the sole internal-flash token. The product supplies the
+identity, shared Smart Plug profile, software-AES startup KAT policy,
+synthetic meter, and application/security journals.
+
+This is a compile/link portability proof only. It does not establish EFR32
+radio, flash, GPIO, entropy, low-power, mains, or metering behavior on
+hardware.
+
+## Persistence partitions
+
+### TLSR8258 products
+
+Both 512 KiB and 1 MiB layouts use the same protected low-flash boundaries:
+
+| Range | Owner | Purpose |
+|---|---|---|
+| `0x00000..0x70000` | Product firmware image | Image must end **strictly before** `0x70000` |
+| `0x70000..0x72000` | Product persistence | Two-sector durable child-table journal |
+| `0x72000..0x74000` | Product persistence | Two-sector application NV (`AppEndpoint1` plug state) |
+| `0x74000..0x76000` | Product persistence | Zigbee credentials and crash-safe frame-counter bounds |
+
+Geometry-specific protected regions are:
+
+| Geometry | Additional defined regions |
+|---|---|
+| 512 KiB | factory/read-only `0x76000..0x78000`; the remaining upper flash is not exposed by the current product storage API |
+| 1 MiB | disabled candidate region `0x96000..0xFC000`; factory/read-only `0xFE000..0x100000`; gaps are not writable product storage |
+
+The board creates one `OnboardFlash` token. The product consumes it once and
+receives disjoint child/application/security partition tokens. The linker
+scripts export all boundaries and reject an image at or above the child
+journal. The build helper independently checks the ELF, binary size, RAM/cache
+layout, and linked journal/router symbols.
+
+### EFR32MG21 proof
+
+`products/plug-efr32-proof/link/memory.x` defines:
+
+| Range | Purpose |
+|---|---|
+| `0x00000000..0x00004000` | Reserved bootloader area |
+| `0x00004000..0x00078000` | Application image, 464 KiB |
+| `0x00078000..0x0007C000` | Application journal, two 8 KiB sectors |
+| `0x0007C000..0x00080000` | Security journal, two 8 KiB sectors |
+| `0x20000000..0x20010000` | 64 KiB SRAM |
+
+There is no child partition because this product is statically an End Device.
+The board's one flash-controller token is split into two type-distinguished,
+bounds-checked views. The application journal uses 64-byte commit-last
+records; host tests cover interrupted append, interrupted rollover, CRC
+fallback, and tombstones. Generation wrap fails closed with `NvError::Full`.
+The security journal is the shared EFR32 two-sector journal from the core
+branch.
+
+## Button and commissioning
+
+The platform button service runs every 10 ms in interrupt context (TLSR8258
+Timer1, EFR32MG21 SysTick). It debounces with
+`zigbee_plug_controller::ButtonGesture` and classifies each completed gesture
+with the pure, host-tested `zigbee_plug_controller::button_action`:
+
+| Gesture | Safety trip latched | Joined | Action |
+|---|---|---|---|
+| hold for 4 s | any | any | `FactoryReset` |
+| short press | yes | any | `ClearTrip` |
+| short press | no | yes | `ToggleRelay` |
+| short press | no | no | `RequestCommissioning` |
+
+The interrupt never touches Zigbee state. `RequestCommissioning` latches a
+flag and starts the searching blink; `PlugCore::step` drains it and calls the
+frontend's `request_commissioning()`. The joined state that the interrupt
+reads is published by the main loop through
+`LocalControl::set_network_joined` after initialization and after every
+network step, so it can be stale for at most one step. If the node joined in
+that window the router refuses the request and `PlugCore` toggles the relay
+through ZCL instead, so a press is never lost. A request latched while a
+factory reset is pending stays queued and is serviced on the step after the
+reset, so a press made just after a coordinator Leave still starts pairing.
+
+Commissioning follows the shared router frontend at zigbee-rs `14ba6df`:
+
+- first power-up of a never-commissioned plug steers without a press, the
+  common smart-plug pairing flow;
+- a coordinator Leave/Remove or a network-requested reset makes the plug
+  factory-new and waits for an explicit request. While waiting, `PlugCore`
+  shows `NetworkStatus::Offline` (LED dark) instead of the router's generic
+  "starting" status, so a removed plug stays visibly idle and off the air
+  until a short press;
+- the 4 s hold uses the core's urgent reset-and-recommission path and steers
+  immediately, matching the core nRF52840 router reference. The core exposes
+  no reset-then-wait operation, and a user holding the button intends to
+  re-pair.
+
+## Reset and erase ordering
+
+An urgent four-second local reset is handled before an already-due network
+retry:
+
+1. set the ZCL/local desired state to Off and synchronously acknowledge the
+   physical relay is Off;
+2. durably checkpoint relay Off and current accumulated energy in application
+   NV;
+3. reset the security state to a credential-free record while preserving the
+   global and Trust Center outgoing-counter upper bounds;
+4. on `PlugRouterApp`, durably replace the child table with an empty snapshot;
+   `AlwaysOnEndDevicePlugApp` has no child store;
+5. schedule immediate recommissioning;
+6. enter fresh steering only on a subsequent application step.
+
+If the application checkpoint fails, security reset, child clear, and steering
+do not start. If security or child persistence fails, steering is not entered.
+Both firmware roots treat the returned error as a terminal fault and force the
+relay output inactive.
+
+The erase rules follow from that ordering:
+
+- never implement factory reset as a raw erase of the security journal;
+  preserving counter bounds prevents key/counter reuse after power loss;
+- never erase the child journal as a substitute for an explicit empty durable
+  snapshot;
+- never erase the application source sector before a replacement record is
+  committed in the other sector;
+- never erase an EFR32 bootloader region or a TLSR8258 factory/read-only region;
+- never full-chip erase a device without first preserving all identity,
+  calibration, and rollback-required data.
+
+## Fail-safe output behavior
+
+Every board configures the relay inactive before enabling its output driver.
+For BRD4181A, the HAL clears the PC3 latch before changing the pin to
+push-pull. For TLSR8258 boards, the board writes the relay's inactive level
+before setting output-enable.
+
+Before local-control ownership is initialized, startup failures reset or halt
+with the board latch inactive. After initialization, a runtime/persistence
+error enters the platform fault path: relay Off, fault LED On, and no further
+application progress. A persisted `Previous` startup state is applied only
+after storage restore and controller/ZCL startup policy have run.
+
+These are source, host-test, and build properties. Actual pin waveforms,
+brownout/reset behavior, relay hardware, and mains safety still require HIL
+and electrical validation.
+
+## Experiment-branch dependency
+
+The manifests currently consume the adjacent
+[`14ba6df`](https://github.com/faronov/zigbee-rs/tree/14ba6df7309602cc31a08e97667c732d61b9580d)
+checkout by relative path. They are not pinned to the older published commit
+described by previous documentation.
+
+The public zigbee-rs GitHub Pages book is deployed from the core repository's
+main/deploy path. Branch source links above are authoritative for this
+migration until that branch is merged and Pages is deployed.

@@ -1,0 +1,18 @@
+[package]
+name = "efr32mg21-brd4181a-plug"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "BRD4181A smart-plug proof board resources"
+publish = false
+
+[dependencies]
+efr32mg21-hal.workspace = true
+
+[lints.rust]
+# Claiming typed HAL pins is the one audited unsafe boundary in this BSP.
+unsafe_code = "allow"
+
+[lints.clippy]
+all = "deny"

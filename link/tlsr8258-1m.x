@@ -14,15 +14,16 @@
  * A is the RAM-code preload size rounded up to 256 bytes.
  *
  * Flash partitions (`zigbee_plug_hardware::TLSR8258_1M_LAYOUT`):
- *   firmware                0x000000..0x072000  (this script's FLASH region)
+ *   firmware                0x000000..0x070000  (this script's FLASH region)
+ *   child-table journal      0x070000..0x072000  (two-sector durable journal)
  *   application NV          0x072000..0x074000  (product-owned log NV)
  *   security journal         0x074000..0x076000  (Zigbee security counters)
  *   candidate energy journal 0x096000..0x0FC000  (disabled/unproven, see below)
  *   factory/read-only        0x0FE000..0x100000  (documented, not writable here)
  *   capacity                   0x100000            (1 MiB)
  *
- * The firmware image must end at or before `_app_nv_start_`: it must never
- * overlap the application-NV log or the security journal that follows it.
+ * The firmware image must end strictly before `_child_nv_start_`: it must never
+ * overlap any durable journal.
  *
  * `_candidate_energy_start_`/`_candidate_energy_end_` only document the
  * catalogued `0x96000..0xFC000` candidate region. Nothing in this script
@@ -32,7 +33,7 @@
  */
 MEMORY
 {
-    FLASH : ORIGIN = 0x00000000, LENGTH = 0x72000
+    FLASH : ORIGIN = 0x00000000, LENGTH = 0x70000
     RAM   : ORIGIN = 0x00840000, LENGTH = 0x10000
 }
 
@@ -119,6 +120,8 @@ SECTIONS
 
     /* Product-owned flash partitions. Keep in sync with
      * `zigbee_plug_hardware::TLSR8258_1M_LAYOUT`. */
+    _child_nv_start_ = 0x70000;
+    _child_nv_end_ = 0x72000;
     _app_nv_start_ = 0x72000;
     _app_nv_end_ = 0x74000;
     _security_nv_start_ = 0x74000;
@@ -152,10 +155,12 @@ SECTIONS
         "ERROR: .rf_dma overlaps the TLSR8258 I-cache tag/data reservation");
     _assert_dma_under_stack = ASSERT(_rf_dma_end_ <= _svc_stack_bottom,
         "ERROR: .rf_dma extends into the SVC stack region");
-    _assert_image_below_app_nv = ASSERT(_bin_size_ <= _app_nv_start_,
-        "ERROR: firmware image overlaps the application-NV partition at 0x72000");
+    _assert_image_below_child_nv = ASSERT(_bin_size_ < _child_nv_start_,
+        "ERROR: firmware image must end before the child-table journal at 0x70000");
     _assert_partitions_ordered = ASSERT(
-        _app_nv_start_ <= _app_nv_end_
+        _child_nv_start_ <= _child_nv_end_
+        && _child_nv_end_ == _app_nv_start_
+        && _app_nv_start_ <= _app_nv_end_
         && _app_nv_end_ == _security_nv_start_
         && _security_nv_start_ <= _security_nv_end_
         && _security_nv_end_ <= _candidate_energy_start_

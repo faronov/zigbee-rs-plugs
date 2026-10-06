@@ -1,303 +1,253 @@
 # `tlsr8258-plug` firmware
 
-`no_std`/`no_main` TLSR8258 smart-plug firmware: **one binary, exactly one
-compile-time product feature**. See `src/main.rs`'s `compile_error!` guards —
-a build with zero or more than one of the six product features fails at
-compile time rather than silently picking one or linking two products'
-worth of persistence/flash-layout assumptions into one image.
+`no_std`/`no_main` TLSR8258 smart-plug firmware with exactly one compile-time
+product feature.
 
-**EXPERIMENTAL. No image built from this crate has been run on TLSR8258
-hardware.** See [`docs/safety.md`](../../docs/safety.md) at the workspace
-root before flashing anything, and the "Hardware gates" section below for
-exactly what is and is not proven.
+**Experimental:** every product compiles, links, and passes the repository's
+post-link gates. No image from this crate has run on physical TLSR8258 plug
+hardware. The build helper has no flashing command.
 
-## Product features
+## Shared application composition
 
-Exactly one of:
+The firmware modules are composition roots, not separate applications:
 
-| Feature | Board | Metering | Linker layout |
-|---|---|---|---|
-| `tz3000-gjnozsaz-1m` | `tlsr8258-ts011f-bl0942` | BL0942 (UART) | 1 MiB |
-| `tz3000-gjnozsaz-512k` | `tlsr8258-ts011f-bl0942` | BL0942 (UART) | 512 KiB |
-| `tz3000-w0qqde0g` | `tlsr8258-ts011f-bl0942` | BL0942 (UART) | 1 MiB |
-| `tz3000-zloso4jk` | `tlsr8258-ts011f-bl0942` | BL0942 (UART) | 1 MiB |
-| `legacy-bl0937-pd6` | `tlsr8258-legacy-bl0937` | BL0937 (pulse capture) | 1 MiB |
-| `zbeacon-ts011f-512k` | `tlsr8258-zbeacon-ts011f-bl0937` | BL0937 (pulse capture) | 512 KiB |
+```text
+selected product identity/layout/storage
+  + selected board pins/resources
+  + TelinkMac<Router> and PersistentChildren
+  + BL0942 or BL0937 MeterService
+  + TlsrLocalControl and TlsrClock
+  + plug_router_app::PlugRouterApp
+```
 
-The four BL0942 products share one board crate and one router loop
-(`src/bl0942_app.rs`). The two incompatible BL0937 boards share only the
-capture-based router loop (`src/bl0937_app.rs`); each retains its own board
-and product crate. Model/manufacturer identity and flash layout always come
-from the selected product crate (`products/*`); this firmware never infers
-a product by runtime fingerprint.
+`PlugRouterApp` owns the common relay/protection, local-control, metering,
+checkpoint, reset, and finite network-step lifecycle. The BL0942 and BL0937
+files only construct their fitted resources. Both use
+`router_app::ParentRouterApp`, the typed `zigbee_runtime::role::Router`, and a
+durable child-table journal.
 
-## Building
+The private shared core is also used by the EFR32 proof through
+`AlwaysOnEndDevicePlugApp`; that proof selects a conformant receiver-on
+`EndDevice` with the routing feature compiled out, while all six TLSR8258
+products explicitly enable parent capability.
 
-Use the workspace's `scripts/tlsr8258-firmware.sh`, which requires the
-modern-tc32 toolchain (see that script's own `--help`/usage text) and never
-flashes a device:
+## Required core revision and toolchain
+
+The manifests fetch the core crates from immutable `zigbee-rs` revision
+[`14ba6df7309602cc31a08e97667c732d61b9580d`](https://github.com/faronov/zigbee-rs/tree/14ba6df7309602cc31a08e97667c732d61b9580d);
+no adjacent checkout is required.
+The public core GitHub Pages book will not include this model until the branch
+is merged and Pages is deployed.
+
+Firmware builds require the modern-tc32
+[`tc32-1.98.1-20261003-31a272`](https://github.com/modern-tc32/rust/releases/tag/tc32-1.98.1-20261003-31a272)
+toolchain, the same release the pinned zigbee-rs core's tc32 CI uses. It
+reports `rustc 1.98.1-dev` and LLVM 23.1.2. CI caches the release archive and
+re-verifies its SHA-256
+`d72e68cfb7490583911323c358fd9dcc760baaa7ebdf1145cdc7208bae6b931b` on every
+run, including cache hits. `.cargo/config.toml` enables LLVM tail merging
+(`-enable-tail-merge=true`), matching the core's TLSR8258 router example.
+
+Install it at the default path:
+
+```text
+.toolchains/tc32-1.98.1-20261003-31a272/
+```
+
+or set `TC32_TOOLCHAIN` to another installation root. The helper uses that
+toolchain's `cargo`, `llvm-nm`, and `llvm-objcopy`.
+
+## Six product features
+
+Exactly one feature is required. Zero or multiple features fail at compile
+time.
+
+| Feature | Product crate identity | Board/meter | Layout | Factory/read-only | Stock OTA catalog |
+|---|---|---|---:|---|---|
+| `tz3000-gjnozsaz-1m` | `_TZ3000_gjnozsaz` / `TS011F`, documented | TS011F PC2 / BL0942 | 1 MiB | `0xFE000..0x100000` | `0x1141` / `0xD3A3` |
+| `tz3000-gjnozsaz-512k` | `_TZ3000_gjnozsaz` / `TS011F`, experimental | TS011F PC2 / BL0942 | 512 KiB | `0x76000..0x78000` | `0x1286` / `0x0002` |
+| `tz3000-w0qqde0g` | `_TZ3000_w0qqde0g` / `TS011F`, documented | TS011F PC2 / BL0942 | 1 MiB | `0xFE000..0x100000` | `0x1141` / `0xD3A3` |
+| `tz3000-zloso4jk` | `_TZ3000_zloso4jk` / `TS011F`, documented | TS011F PC2 / BL0942 | 1 MiB | `0xFE000..0x100000` | `0x1141` / `0xD3A3` |
+| `legacy-bl0937-pd6` | unknown manufacturer / `TS011F`, pin-map only | legacy PD6 / BL0937 | 1 MiB | `0xFE000..0x100000` | none |
+| `zbeacon-ts011f-512k` | `Zbeacon` / `TS011F`, pin-map only | Zbeacon PD2 / BL0937 | 512 KiB | `0x76000..0x78000` | none |
+
+The two `_TZ3000_gjnozsaz` products share a manufacturer/model identity but
+not a flash geometry. Never select between them from the string alone.
+The OTA values are stock catalog metadata only; this firmware does not
+advertise or consume them, and OTA remains disabled.
+
+## Exact build commands
+
+Run from the repository root:
 
 ```bash
-# check only (fast, no objcopy/layout check)
-scripts/tlsr8258-firmware.sh check firmware/tlsr8258-plug tlsr8258-plug 1m tz3000-gjnozsaz-1m
+scripts/tlsr8258-firmware.sh build \
+  firmware/tlsr8258-plug tlsr8258-plug 1m \
+  tz3000-gjnozsaz-1m
 
-# full build: cargo rustc, objcopy to .bin, post-link layout check
-scripts/tlsr8258-firmware.sh build firmware/tlsr8258-plug tlsr8258-plug 512k tz3000-gjnozsaz-512k
-scripts/tlsr8258-firmware.sh build firmware/tlsr8258-plug tlsr8258-plug 1m legacy-bl0937-pd6
-scripts/tlsr8258-firmware.sh build firmware/tlsr8258-plug tlsr8258-plug 512k zbeacon-ts011f-512k
+scripts/tlsr8258-firmware.sh build \
+  firmware/tlsr8258-plug tlsr8258-plug 512k \
+  tz3000-gjnozsaz-512k
+
+scripts/tlsr8258-firmware.sh build \
+  firmware/tlsr8258-plug tlsr8258-plug 1m \
+  tz3000-w0qqde0g
+
+scripts/tlsr8258-firmware.sh build \
+  firmware/tlsr8258-plug tlsr8258-plug 1m \
+  tz3000-zloso4jk
+
+scripts/tlsr8258-firmware.sh build \
+  firmware/tlsr8258-plug tlsr8258-plug 1m \
+  legacy-bl0937-pd6
+
+scripts/tlsr8258-firmware.sh build \
+  firmware/tlsr8258-plug tlsr8258-plug 512k \
+  zbeacon-ts011f-512k
 ```
 
-The layout (`512k`/`1m`) must match the selected product's flash geometry
-(see the table above and `link/README.md`); `build.rs` also picks a matching
-default if `TLSR8258_LINKER_SCRIPT` is left unset by a direct
-`cargo build --no-default-features --features <product>` invocation.
+For compile-only validation, replace `build` with `check`; the other four
+arguments must remain explicit and geometry-correct.
 
-`.github/workflows/build-tc32.yml` runs the `build` command above for all
-six product features on every push/PR touching this crate or its
-dependencies, uploading each `.bin` as an experimental artifact. It never
-flashes hardware and has no `flash` job. The measurements below identify the
-current macOS `tc32-45` validation build. Linux GitHub Actions produces the
-same sizes and layout results, but its output is not asserted to be
-byte-identical; use each build's generated `*.size.json` for its own hash.
+`build` performs a locked release `cargo rustc`, converts the ELF to `.bin`,
+checks the linker/RAM/cache/RF-DMA layout, checks linked role/child/AES
+symbols, and writes `tlsr8258-plug.size.json`. It never flashes hardware.
 
-## Upstream dependency
+## Flash partitions and constraints
 
-The firmware pins all `zigbee-rs` crates to commit
-`aeddd2af7d8f894200d5770d2ea4f61e2c1bb34c`. That published revision
-contains the reusable TLSR8258 UART, GPIO capture, ADC, flash geometry,
-voltage guard, IRQ, timer, and router support used here, plus the typed
-device-role model (`zigbee_runtime::role`), corrected Telink factory EUI
-decoding, key-bound APS replay/retry handling, persisted R22 rejoin selection,
-durable parent state, and complete router Link Status, Network Report/Update,
-and authenticated address-conflict maintenance. Its conflict detector requires
-an explicit NWK origin IEEE and never mistakes a relaying coordinator's
-auxiliary-security IEEE for the plug, preventing short-address churn before
-Active EP and On/Off responses. It retains the bounded GSDK-style TCLK
-exchange, normal coordinator-initiated leave handling, priority-aware RX
-queues, and the hardware-proven R22 Verify-Key correction described below. No
-local Cargo `[patch]` is required.
+All six products reserve:
 
-Updating the stack pin does not repair a stale Trust Center replay floor. A
-stock-to-Rust migration keeps the same factory EUI-64 but replaces the stock
-app config at `0x74000` with a new zigbee-rs security journal whose APS counter
-bounds initially start at zero. If the coordinator already knows that EUI from
-the stock firmware, remove the old device/link-key entry before pairing. Once
-zigbee-rs has commissioned, never raw-erase `0x74000..0x76000`: factory reset
-must preserve the counter bounds, and any manual recovery must restore a
-credential-free record with bounds above the Trust Center's retained replay
-floor.
+| Range | Purpose |
+|---|---|
+| `0x00000..0x70000` | firmware image budget |
+| `0x70000..0x72000` | durable child-table journal |
+| `0x72000..0x74000` | application-state log |
+| `0x74000..0x76000` | credentials and crash-safe frame-counter bounds |
 
-For ZiGate coordinators, first verify the radio firmware itself. ZiGate
-`v3.1d` used `bSetTclkFlashFeature || u8Status == 1` in the Trust Center
-join/rejoin callback `APP_bSendHATransportKey`; `v3.1e` changed the condition
-to `&&`, and its release notes identify the change as
-`Fix HATransportKey function (Device Authentification)`. Current `v3.23`
-retains the corrected condition. ZiGate also requires TCLK exchange and gives
-a newly joined node 15 seconds to complete it. The pinned stack starts after
-300 ms, keeps independent three-transmission budgets for Node Descriptor,
-Request-Key, and Verify-Key, uses 1.5/3/5-second response windows, and enforces
-a strict 15-second first-pass deadline.
+The binary must end **strictly before** `0x70000` (458,752 bytes). The linker
+and build helper both enforce that boundary.
 
-R22 requires Verify-Key to remain NWK-secured but **not** APS-encrypted. The
-pinned stack therefore emits APS frame control `0x41` with no APS auxiliary
-security header or MIC, computes the hash from the installed unique TCLK
-without consuming its outgoing APS security counter, and treats an APS ACK as
-transport feedback only. Commissioning completes only after an authenticated
-successful Confirm-Key; missing or rejected Confirm-Key follows the bounded
-retry/failure policy instead of an ACK-only compatibility path.
+On 1 MiB parts, `0x96000..0xFC000` is a documented but disabled candidate
+region. No product storage accessor exists for it. Unlisted gaps and the
+geometry-specific factory regions are not spare application flash.
 
-The shared reference router has hardware-proven this exact exchange against
-ZiGate v3.23 on the first association: ZiGate validated the `0x41` Verify-Key
-and returned an APS-secured successful Confirm-Key. These plug images compile
-and link the same shared APS/BDB path, but still require their own board-level
-hardware acceptance. Query ZiGate version with command `0x0010` / response
-`0x8010`, use at least `v3.1e`, and capture Request-Key, Transport-Key,
-Verify-Key, Confirm-Key, and any Leave before changing crypto behavior.
-Accepting Confirm-Key under the public `ZigBeeAlliance09` key remains an
-unjustified authentication downgrade.
+Each board creates one `OnboardFlash` token. The selected product consumes it
+once and constructs three disjoint stores. Product selection therefore owns
+the partition contract; the board owns only the fitted flash resource.
 
-Because a mains plug is a genuine parent, every image is built as a typed
-`zigbee_runtime::role::Router` (`ZigbeeDevice<TelinkMac, Router>` via
-`build_router_into`), never the default leaf `EndDevice`. `zigbee-zcl` and
-`zigbee-runtime` use `default-features = false, features = ["router"]` to
-drop the unused `float32`/`float64` ZCL codec (all plug attributes are
-integer-scaled); `constrained-memory` is intentionally left off so no
-parent/child table is shrunk. See `docs/architecture.md` for the full
-rationale.
+## Current measured builds
 
-Hardware AES is mandatory in every production plug image. Each board owns the
-exclusive TLSR8258 AES peripheral token, and the selected application installs
-it into `TelinkMac` before opening persistence or starting Zigbee. Installation
-runs the upstream on-chip known-answer self-test; failure leaves the relay off
-and enters the existing fail-closed startup path. There is no runtime software
-fallback. The `aes` crate can still appear in `Cargo.lock` as dependency
-metadata, so the release gate checks the linked ELF instead: `HardwareAes128`
-and `install_aes_engine` must be present, while `aes::soft` and
-`SoftwareAes128` must be absent.
+The following local measurements were regenerated on 2026-10-06 from commit
+`b02b7f5` (zigbee-rs core `14ba6df`) with `tc32-1.98.1-20261003-31a272` and
+LLVM tail merging. Every entry passed the layout check and symbol gate. They
+are build evidence, not stable release identifiers or hardware proof.
 
-## Hardware gates
+| Product | Image | Headroom to `0x70000` | RAM code | SHA-256 |
+|---|---:|---:|---:|---|
+| `tz3000-gjnozsaz-1m` | 307,492 B | 151,260 B | 3,620 B | `80118f9f31f894940be043e023ebb9c348e95bd21b408b3e623c8bacc951aed3` |
+| `tz3000-gjnozsaz-512k` | 307,496 B | 151,256 B | 3,624 B | `c9e64d83053be6c58255eeb3478ebdf065097e5179c82abf6f03236d0fc8c541` |
+| `tz3000-w0qqde0g` | 307,492 B | 151,260 B | 3,620 B | `aa434c7fd7b5e8d40532240efa28ce75fc96b4343b64e2c9be14ac18c3ab10a8` |
+| `tz3000-zloso4jk` | 307,492 B | 151,260 B | 3,620 B | `e93d512810a868f1ccd0808e39e617a7901dfc7f8e00b77660c72d315c25510c` |
+| `legacy-bl0937-pd6` | 308,864 B | 149,888 B | 3,804 B | `e8a117d5161582eceeb0c32d54c4135a4a539df178340621be3acd96524c9760` |
+| `zbeacon-ts011f-512k` | 309,040 B | 149,712 B | 3,808 B | `7134861ac1222296d0516ce03ff9083a31a6835a8a5396acfe5f66ff775092a8` |
 
-All six product features compile, link, produce `.bin` files, pass the
-post-link flash/RAM/cache/RF-DMA checks, pass the typed-`Router` symbol gate
-(hardware AES installed; software AES absent; parent path present; End Device
-Timeout client + `EndDevice`/`RelayRouter` roles absent), and emit a
-`*.size.json` size/budget report with the modern-tc32 toolchain. Nothing in
-this crate has run on physical TLSR8258 plug hardware. The open gates are
-therefore:
+For comparison, the previous core pin `1d7df8f` built with the retired
+`tc32-stage2-tc32-45` toolchain produced 371,400 B for `tz3000-gjnozsaz-1m`;
+the current core no longer fits below `0x70000` with that toolchain.
 
-| Product | Hardware-AES image | Headroom before `0x72000` | SHA-256 |
-|---|---:|---:|---|
-| `tz3000-gjnozsaz-1m` | 348,908 B | 118,036 B | `3871a6cf7a0571eaf3d2f8ff3b660ed7cb074f34ba344e6b3bab98853b2f88c5` |
-| `tz3000-gjnozsaz-512k` | 348,904 B | 118,040 B | `22a80adea86e61caff61256fd7659121bbc8864bbb6d51aa89762617824c19eb` |
-| `tz3000-w0qqde0g` | 348,908 B | 118,036 B | `a2eaf6fc36271694cb0ce8cdf01fff6dfdda0202426bbdfb827452b953b2c30c` |
-| `tz3000-zloso4jk` | 348,908 B | 118,036 B | `fbfd93059ade1eec30e2afe0ade0b6ee5c22b97f89c01d4430a9c7b12cc49ee7` |
-| `legacy-bl0937-pd6` | 354,192 B | 112,752 B | `17da037137001fd2d475a4f21013f22d258a62a6dc370903f79ca3d88a73245f` |
-| `zbeacon-ts011f-512k` | 353,932 B | 113,012 B | `f3b8a8755c2ce6e963fa18a68c0ec38f50360c15db4f3961807abce701a9cada` |
+Use the generated `*.size.json` from a particular build as the source of
+truth for that artifact.
 
-These measurements use the pinned `tc32-45` toolchain and include the complete
-R22 parent lifecycle, the corrected address-conflict path, and the Timer1
-local-control service. No parent/router table is reduced.
+## Button behavior
 
-1. preserve and inspect each exact board's original flash;
-2. verify JEDEC geometry and PC5 voltage-sense wiring;
-3. prove relay, network-status LED, short-press local toggle, four-second
-   network factory reset, BL0942 UART or BL0937 pulse inputs, and flash
-   persistence without a connected mains load;
-4. prove the local relay remains responsive throughout scan, association,
-   failed join, retry backoff, rejoin, and normal joined operation;
-5. prove Zigbee commissioning, Active Endpoints, On/Off responses, reporting,
-   reset/resume, and counter durability;
-6. keep OTA disabled until each geometry has a verified staging/activation
-   layout.
+| Gesture (30 ms debounce) | Plug state | Action |
+|---|---|---|
+| short press | protection or meter trip latched | clear the trip; power returns only after a fresh safe meter sample |
+| short press | joined | toggle the relay; the change is copied into ZCL OnOff and reported |
+| short press | not joined | request Network Steering; the LED starts blinking |
+| hold for 4 s | any | relay Off, factory reset, then immediate Network Steering |
 
-## Factory-identity gate for non-512 KiB products (runtime, geometry-aware, fail-closed)
+Network state at power-up and after a Leave follows zigbee-rs `14ba6df`:
 
-The pinned HAL exposes `tlsr8258_hal::flash::FlashGeometry`,
-`factory_ieee_for` (which verifies JEDEC capacity before reading), and
-`zigbee_mac::telink::TelinkMac::new_for_flash_geometry`. Every product
-wires its declared flash capacity through those APIs:
+- a never-commissioned plug starts steering by itself on power-up;
+- a commissioned plug resumes its network and does not steer;
+- after a coordinator Leave/Remove or a network-requested reset, the plug
+  becomes factory-new, keeps the LED dark, and does not search until a
+  short press. This keeps a deliberately removed plug off the air.
 
-```rust
-// firmware/tlsr8258-plug/src/router_support.rs
-pub fn mac_for_product(flash_capacity: u32) -> Option<(TelinkMac, [u8; 8])> {
-    let geometry = FlashGeometry::from_capacity(flash_capacity as usize)?;
-    let mut ieee_address = [0u8; 8];
-    tlsr8258_hal::flash::factory_ieee_for(geometry, &mut ieee_address).ok()?;
-    let mac = TelinkMac::new_for_flash_geometry(geometry).ok()?;
-    Some((mac, ieee_address))
-}
-```
+The LED blinks while searching or joining, follows the relay once joined, and
+is solid on a fault.
 
-Both `bl0942_app.rs` and `bl0937_app.rs` call this with
-`product::PRODUCT.flash.capacity` (never a hardcoded literal) and treat
-`None` as a fail-closed startup failure (`fail(&relay, &led)`), covering
-both "capacity has no known geometry" and "JEDEC ID doesn't match the
-geometry the product claims" — there is no silent fallback to a wrong
-sector. The resolved `[u8; 8]` factory EUI-64 is also returned (alongside
-the constructed `TelinkMac`, which exposes no public getter for it) and
-used unchanged for `reset_security_state_if_identity_changed` — no
-per-product byte offset is added to it (see "No EUI mutation" below).
+## Reset and persistence behavior
 
-Product metadata/layout itself (`ProductProfile.flash` in each
-`products/*/src/lib.rs`) is correct and unaffected: all six products
-already declare the right `FlashLayout` for their real flash size
-(verified against `plug-hardware`'s `TLSR8258_512K_LAYOUT`/
-`TLSR8258_1M_LAYOUT` constants and each product's `validate()` const
-assertion).
+The shared app handles a four-second local reset before any already-due retry:
 
-**Build evidence:** all six products — `tz3000-gjnozsaz-512k` and
-`zbeacon-ts011f-512k` (512 KiB geometry), plus `tz3000-gjnozsaz-1m`,
-`tz3000-w0qqde0g`, `tz3000-zloso4jk`, and `legacy-bl0937-pd6` (1 MiB
-geometry) — build against the pinned upstream commit via
-`scripts/tlsr8258-firmware.sh build` (compiles, links, `objcopy`s to
-`.bin`, passes the script's post-link layout/RAM/RF-DMA boundary check and
-the typed-`Router` symbol gate, and writes `*.size.json`). Current image
-sizes are listed above; all remain under the app-NV budget at `0x72000`
-(466,944 B), with at least 130,376 bytes of headroom. The 1 MiB builds'
-layout-check output
-correctly reports `factory_data=[0xFE000..0x100000)`, confirming the
-geometry-aware path resolves the right sector rather than the 512 KiB
-one. This remains a software/build result, not hardware proof.
+1. force logical relay Off and synchronously acknowledge physical relay Off;
+2. checkpoint relay Off and accumulated energy in application NV;
+3. write credential-free security state while preserving global/TCLK counter
+   upper bounds;
+4. write an empty durable child table;
+5. schedule immediate recommissioning;
+6. begin steering on the next application step.
 
-## No EUI mutation
+An application checkpoint error stops before security reset, child clear, or
+steering. Any later persistence/network error enters the firmware fault path:
+relay Off, fault LED On, and no further application progress.
 
-Earlier drafts of this firmware added a per-product-family byte offset
-(`wrapping_add(0x42)` for BL0942 products, `0x37` for BL0937) to the
-first octet of the resolved factory/flash-UID EUI-64, intended to avoid
-address collisions between differently-reflashed firmware images on the
-same physical part. This has been removed: only one firmware image ever
-runs on a given physical TLSR8258 part at a time, so there is no real
-collision to avoid, and mutating an arbitrary octet corrupts the
-EUI-64's OUI/U-L-bit structure and forces a spurious new Zigbee network
-identity on every reflash for no benefit. The factory/flash-UID-derived
-address from `mac_for_product` above is used completely unchanged.
+The relay is also held physically Off until the first safe meter sample.
+Capture overflow or UART reset latches a meter fault immediately; missing or
+stale samples latch after the shared 10-second health deadline. Timer1 owns a
+sticky physical inhibit for those deadlines and the four-second reset, so
+network scanning/rejoin cannot defer relay-off or clear it through ordinary
+reconciliation. A local fault clear starts a fresh sample interlock rather
+than restoring power directly.
 
-## Voltage-guard fail-closed gate
+Do not raw-erase `0x74000..0x76000` during factory reset. After a stock-to-Rust
+migration, remove the coordinator's old entry before first Rust commissioning
+if it retains the same factory EUI-64 and a higher replay floor. Once Rust has
+commissioned, preserve the security journal so counter bounds are never
+reused.
 
-`tlsr8258-hal::flash` gates program/erase operations on Zbit-branded flash
-parts (`ZB25WD40B`/`ZB25WD80B`, JEDEC MID `0x13325E`/`0x14325E`) behind an
-ADC-backed `VoltageGuardFn`. Both router loops now install a real guard
-before opening or writing any persistent storage
-(`router_support::install_flash_voltage_guard`, called from
-`bl0942_app.rs`/`bl0937_app.rs` right after `mac_for_product` and before
-`product::storage::open_storage`):
+The child journal is separate because its larger, lower-frequency snapshots
+must not enlarge every security-counter reservation. Records are bound to the
+network extended PAN ID; corrupt or foreign child state is replaced with an
+empty durable snapshot before parent service.
 
-```rust
-pub fn install_flash_voltage_guard(
-    adc: tlsr8258_hal::peripherals::Adc,
-    pin: tlsr8258_hal::gpio::Pin,
-    flash_capacity: u32,
-) -> bool {
-    let geometry = match FlashGeometry::from_capacity(flash_capacity as usize) {
-        Some(geometry) => geometry,
-        None => return false,
-    };
-    match tlsr8258_hal::adc::Adc::new(adc, geometry) {
-        Ok(adc) => adc.install_flash_voltage_guard(pin).is_ok(),
-        Err(_) => false,
-    }
-}
-```
+## Hardware and security gates
 
-`Adc::new` verifies the fitted flash's JEDEC ID against the product's
-declared geometry (loading the matching factory ADC calibration) before
-`install_flash_voltage_guard` takes an output-high PC5 measurement and
-registers it as the real `VoltageGuardFn` — the same physical measurement
-path Telink's own SDK uses (an otherwise-unused GPIO pad driven high and
-sampled as a VBAT sense source), not a fabricated or constant reading.
-All three board crates (`tlsr8258-ts011f-bl0942`,
-`tlsr8258-legacy-bl0937`, and `tlsr8258-zbeacon-ts011f-bl0937`) now
-expose an `adc: tlsr8258_hal::peripherals::Adc` token and a
-`flash_voltage_pin: Pin` (PC5, previously unused on all three boards, verified
-by grep before reservation) field on `BoardResources`. These resources are
-unconditional because the pinned HAL now provides the complete ADC API, so
-ordinary host CI compiles the same board ownership surface used by firmware.
+The linked-image gate proves that every product image contains:
 
-If guard installation fails for any reason (unsupported capacity, JEDEC/
-geometry mismatch, or an ADC hardware-initialization error), both router
-loops treat that as a fail-closed startup failure (the same `fail()` path
-used for `mac_for_product` failures) rather than opening storage without
-a guard "just in case" the fitted part is not actually Zbit-branded — the
-HAL's own `ensure_safe_flash()` already handles the non-Zbit case
-safely on its own (`Ok(())` unconditionally, no guard required), so this
-firmware only needs the guard to exist correctly when it might matter, not
-to special-case flash brand detection itself. There is still no code path
-anywhere in this crate that fabricates a fixed voltage reading (e.g. a
-constant 3300 mV).
+- TLSR8258 `HardwareAes128` and `install_aes_engine`;
+- typed `zigbee_runtime::role::Router`;
+- the parent/child-serving path and `ChildTableJournal`.
 
-**Build evidence:** all six products build end-to-end against the pinned
-upstream revision with this guard wired in — see the note above; the same
-`scripts/tlsr8258-firmware.sh build` run that verified the geometry-aware
-identity path also verified this. This is still not hardware-proven:
-whether PC5 actually senses a meaningful voltage (or floats/is tied to
-something else) on the physical `TS011F`/legacy `PD6` boards has not been
-confirmed against a schematic or measured hardware, only that the
-software path Telink's own SDK uses for this measurement compiles and
-encodes the same register sequence.
+It proves that the image omits:
 
-Voltage-based *protection-engine* trips (`TripReason::UnderVoltage`/
-`OverVoltage` in `zigbee_plug_core`) are a separate, unrelated mechanism:
-those come from the BL0942/BL0937 mains measurement chips' own
-`voltage_mv` samples (see `bl0942_task.rs`/`bl0937_task.rs`), not from any
-Zbit ADC guard, and are wired up normally since every product here is
-mains-powered (`PowerSource::MainsSinglePhase`).
+- RustCrypto software AES;
+- `RamChildTableStore`;
+- `EndDevice`, forwarding-only `RelayRouter`, and End Device Timeout client
+  code.
+
+The board resources also reserve PC5 plus ADC for the geometry-aware Zbit
+flash-voltage guard. Startup fails closed if the declared capacity, JEDEC
+geometry, ADC calibration, hardware AES installation, storage construction,
+or factory identity path fails.
+
+These are still open hardware gates for every product:
+
+1. preserve and inspect the exact stock flash;
+2. verify live JEDEC geometry and PC5's electrical connection;
+3. prove inactive-at-boot relay behavior, LED, button, four-second reset, and
+   local control during scan/retry/rejoin;
+4. prove BL0942 UART or BL0937 capture/calibration against a known load;
+5. capture commissioning, parent/child service, ZDO interview, commands, and
+   reporting;
+6. power-cycle through application, child, and security journal writes and
+   rollover without counter reuse;
+7. test fault/reset/brownout behavior without a mains load first;
+8. keep OTA disabled until each product has verified image identity, staging,
+   verification, activation, rollback, and persistence-retention policy.
+
+`.github/workflows/build-tc32.yml` runs the six-command matrix and uploads
+experimental ELF, BIN, and size JSON artifacts for 30 days. It has no flash
+job.

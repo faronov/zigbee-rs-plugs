@@ -5,9 +5,7 @@ pub mod storage;
 
 use bl0937::{Calibration, Scale, SelPolarity};
 use zigbee_plug_core::ProtectionConfig;
-use zigbee_plug_hardware::{
-    Evidence, ProductProfile, TLSR8258_512K_LAYOUT, ZBEACON_TS011F_BL0937_PD2,
-};
+use zigbee_plug_hardware::{Evidence, ProductProfile, TLSR8258_512K_LAYOUT};
 
 const fn scale(numerator: u64, denominator: u64) -> Scale {
     match Scale::new(numerator, denominator) {
@@ -65,7 +63,6 @@ pub const PRODUCT: ProductProfile = ProductProfile {
     slug: "zbeacon-ts011f-512k",
     stock_manufacturer: Some("Zbeacon"),
     stock_model: "TS011F",
-    board: &ZBEACON_TS011F_BL0937_PD2,
     flash: TLSR8258_512K_LAYOUT,
     stock_ota: None,
     evidence: Evidence::PinMapOnly,

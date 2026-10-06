@@ -1,0 +1,41 @@
+[package]
+name = "plug-efr32-proof-firmware"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "plug-efr32-proof"
+path = "src/main.rs"
+
+[dependencies]
+cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
+cortex-m-rt = { version = "0.7", features = ["device"] }
+efr32mg21-brd4181a-plug = { path = "../../boards/efr32mg21-brd4181a-plug" }
+efr32mg21-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
+embassy-executor = { version = "0.7", features = ["arch-cortex-m", "executor-thread"] }
+embassy-time = { version = "0.4", features = ["tick-hz-1_000_000"] }
+embassy-time-driver = "0.2"
+log = "0.4"
+plug-efr32-proof = { package = "plug-efr32-proof-product", path = "../../products/plug-efr32-proof" }
+plug-router-app = { path = "../../apps/plug-router", default-features = false }
+router-app = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d", default-features = false }
+rtt-target = { version = "0.6", features = ["log"] }
+static_cell = "2"
+zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d", features = ["efr32mg21"] }
+zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
+zigbee-plug-controller = { path = "../../plug-controller" }
+zigbee-plug-core = { path = "../../plug-core" }
+zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d", default-features = false }
+zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
+zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d", default-features = false }
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1
+lto = true
+debug = false
+panic = "abort"
+
+# This is an independently locked target package, not a host-workspace member.
+[workspace]

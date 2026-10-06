@@ -16,6 +16,7 @@
 //! known load on real hardware.
 
 use bl0942::{Calibration, EnergyTracker, FeedResult, RawFrame, StreamParser};
+use plug_router_app::{MeterService, MeterServiceOutcome};
 use tlsr8258_hal::uart::Uart;
 use zigbee_plug_core::ElectricalSample;
 
@@ -37,25 +38,6 @@ const REQUEST_INTERVAL_MS: u32 = 1_000;
 /// comfortably drains more than one frame per poll under normal load.
 const MAX_RX_BYTES_PER_POLL: u8 = 64;
 
-/// Consecutive `UartError` results from `try_read`/`try_write` before this
-/// task gives up on the current peripheral state and reinitializes it via
-/// [`Uart::reset`]. Bounded so a persistently wedged UART cannot spin this
-/// task forever without ever recovering.
-const MAX_ERROR_STREAK: u8 = 8;
-
-/// This poll's result. Never blocks; the caller decides what to do next.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Outcome {
-    /// Nothing new this poll.
-    Idle,
-    /// A full packet was parsed and converted.
-    Sample(ElectricalSample),
-    /// The UART was reinitialized after too many consecutive errors. The
-    /// caller should treat this as "no sample this poll", not a fatal
-    /// condition — the task keeps running afterward.
-    ResetRequested,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TxState {
     Idle,
@@ -69,7 +51,6 @@ pub struct Bl0942Task {
     energy: EnergyTracker,
     tx: TxState,
     next_request_at_ms: u32,
-    error_streak: u8,
 }
 
 impl Bl0942Task {
@@ -88,12 +69,11 @@ impl Bl0942Task {
                 .expect("reference calibration's energy_counts_per_kwh is nonzero"),
             tx: TxState::Idle,
             next_request_at_ms: now_ms,
-            error_streak: 0,
         }
     }
 
     /// Restore the durable lifetime energy total read back from NV before
-    /// this task's first [`Self::poll`] — see `persistence.rs`. Re-baselines
+    /// this task's first [`Self::poll`]. Re-baselines
     /// the hardware counter tracking on the next observed frame, exactly as
     /// [`EnergyTracker::restore_total_uwh`] documents.
     pub fn restore_energy_uwh(&mut self, total_uwh: u64) {
@@ -109,7 +89,7 @@ impl Bl0942Task {
     /// One bounded poll: drives the TX request state machine, then drains
     /// up to [`MAX_RX_BYTES_PER_POLL`] bytes into the stream parser. Call
     /// at a steady cadence from the main loop (see `bl0942_app.rs`).
-    pub fn poll(&mut self, now_ms: u32) -> Outcome {
+    pub fn poll(&mut self, now_ms: u32) -> MeterServiceOutcome {
         if let Some(outcome) = self.drive_tx(now_ms) {
             return outcome;
         }
@@ -117,32 +97,31 @@ impl Bl0942Task {
         for _ in 0..MAX_RX_BYTES_PER_POLL {
             match self.uart.try_read() {
                 Ok(Some(byte)) => {
-                    self.error_streak = 0;
                     if let Some(outcome) = self.feed(byte) {
                         return outcome;
                     }
                 }
                 Ok(None) => break,
                 Err(_) => {
-                    if self.register_error() {
-                        return Outcome::ResetRequested;
-                    }
-                    break;
+                    self.reset_interface();
+                    return MeterServiceOutcome::InterfaceReset;
                 }
             }
         }
-        Outcome::Idle
+        MeterServiceOutcome::Idle
     }
 
-    fn feed(&mut self, byte: u8) -> Option<Outcome> {
+    fn feed(&mut self, byte: u8) -> Option<MeterServiceOutcome> {
         match self.parser.push(byte) {
             FeedResult::Pending => None,
             // A checksum/header parse failure is a protocol-framing event,
             // not a UART hardware error: `StreamParser` has already
             // resynchronized on the next header byte internally, so this
-            // does not count toward `error_streak`/`Uart::reset`.
+            // does not request a hardware `Uart::reset`.
             FeedResult::Error(_) => None,
-            FeedResult::Frame(frame) => Some(Outcome::Sample(self.sample_from_frame(frame))),
+            FeedResult::Frame(frame) => {
+                Some(MeterServiceOutcome::Sample(self.sample_from_frame(frame)))
+            }
         }
     }
 
@@ -166,7 +145,7 @@ impl Bl0942Task {
     /// if a write error forced an immediate reset (this never happens with
     /// the current `Uart::try_write`, which cannot return `Err`, but is
     /// handled explicitly rather than assumed away).
-    fn drive_tx(&mut self, now_ms: u32) -> Option<Outcome> {
+    fn drive_tx(&mut self, now_ms: u32) -> Option<MeterServiceOutcome> {
         if let TxState::Idle = self.tx {
             // Wrapping-safe "has `now_ms` reached `next_request_at_ms` yet"
             // check: the signed interpretation of the wrapped difference is
@@ -186,7 +165,6 @@ impl Bl0942Task {
         if let TxState::Sending { bytes, index } = self.tx {
             match self.uart.try_write(bytes[index as usize]) {
                 Ok(true) => {
-                    self.error_streak = 0;
                     let next_index = index + 1;
                     if next_index as usize == bytes.len() {
                         self.tx = TxState::Idle;
@@ -203,33 +181,31 @@ impl Bl0942Task {
                     // never block waiting for room.
                 }
                 Err(_) => {
-                    if self.register_error() {
-                        return Some(Outcome::ResetRequested);
-                    }
+                    self.reset_interface();
+                    return Some(MeterServiceOutcome::InterfaceReset);
                 }
             }
         }
+
         None
     }
 
-    /// Record one UART error. Returns `true` (and resets the peripheral)
-    /// once [`MAX_ERROR_STREAK`] consecutive errors have accumulated.
-    fn register_error(&mut self) -> bool {
-        self.error_streak = self.error_streak.saturating_add(1);
-        if self.error_streak >= MAX_ERROR_STREAK {
-            // Best-effort: `Uart::reset` now reports failures explicitly
-            // (upstream HAL churn), but this call site already has a
-            // bounded-retry design for a persistently unhealthy
-            // peripheral — falling through still clears the streak and
-            // reports `ResetRequested`, so the next `MAX_ERROR_STREAK`
-            // consecutive UART errors retries the reset again rather than
-            // silently giving up forever on one failed attempt.
-            let _ = self.uart.reset();
-            self.error_streak = 0;
-            self.tx = TxState::Idle;
-            true
-        } else {
-            false
-        }
+    fn reset_interface(&mut self) {
+        let _ = self.uart.reset();
+        self.tx = TxState::Idle;
+    }
+}
+
+impl MeterService for Bl0942Task {
+    fn restore_energy_uwh(&mut self, total_uwh: u64) {
+        Bl0942Task::restore_energy_uwh(self, total_uwh);
+    }
+
+    fn total_energy_uwh(&self) -> u64 {
+        Bl0942Task::total_energy_uwh(self)
+    }
+
+    fn service(&mut self, now_ms: u32) -> MeterServiceOutcome {
+        self.poll(now_ms)
     }
 }

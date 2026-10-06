@@ -31,7 +31,9 @@
 pub mod button;
 pub mod indicator;
 
-pub use button::{ButtonDebouncer, ButtonEdge, ButtonGesture, ButtonGestureEvent};
+pub use button::{
+    ButtonAction, ButtonDebouncer, ButtonEdge, ButtonGesture, ButtonGestureEvent, button_action,
+};
 pub use indicator::{NetworkStatus, status_led_on};
 use zigbee_plug_core::{
     ElectricalSample, PlugSettings, ProtectionAction, ProtectionConfig, ProtectionEngine,
@@ -79,6 +81,10 @@ impl PlugController {
 
     pub const fn trip_reason(&self) -> Option<TripReason> {
         self.protection.trip_reason()
+    }
+
+    pub const fn sample_is_safe(&self, sample: ElectricalSample) -> bool {
+        self.protection.sample_violation(sample).is_none()
     }
 
     pub fn clear_protection_latch(&mut self) {
@@ -146,7 +152,17 @@ impl PlugController {
     /// ~100 ms cadence per ZCL §3.8.2.3.1, independent of how often
     /// [`Self::reconcile`] is otherwise invoked after incoming frames.
     pub fn tick_100ms(&mut self, plug: &mut ZigbeePlug) -> RelayLedState {
-        plug.tick_on_off();
+        self.tick_100ms_by(plug, 1)
+    }
+
+    /// Advance OnTime/OffWaitTime by all elapsed 100 ms periods in one
+    /// bounded operation.
+    pub fn tick_100ms_by(
+        &mut self,
+        plug: &mut ZigbeePlug,
+        elapsed_deciseconds: u32,
+    ) -> RelayLedState {
+        plug.tick_on_off_by(elapsed_deciseconds);
         self.reconcile(plug)
     }
 

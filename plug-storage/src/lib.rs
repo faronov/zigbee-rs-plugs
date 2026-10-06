@@ -2,7 +2,8 @@
 //!
 //! Every TLSR8258 smart-plug product in this workspace shares the same
 //! proven partition boundaries recorded in
-//! [`zigbee_plug_hardware::FlashLayout`]: firmware ends before `0x72000`,
+//! [`zigbee_plug_hardware::FlashLayout`]: firmware ends before `0x70000`,
+//! the durable child-table journal occupies `0x70000..0x72000`,
 //! the product-owned application-NV log occupies `0x72000..0x74000`, and
 //! the Zigbee security-counter journal occupies `0x74000..0x76000`. This
 //! crate turns that shared catalog into one reusable, type-safe mechanism
@@ -16,9 +17,10 @@
 //! token, constructible only inside that board's `BoardResources::take()`
 //! (itself gated to succeed at most once per boot by
 //! `tlsr8258_hal::peripherals::Peripherals::take`). [`split_onboard_flash`]
-//! consumes that single token by value and returns the two disjoint
-//! partition tokens ([`AppNvPartition`], [`SecurityPartition`]) that a
-//! product needs to build its application-NV and security-journal
+//! consumes that single token by value and returns the three disjoint
+//! partition tokens ([`ChildTablePartition`], [`AppNvPartition`], and
+//! [`SecurityPartition`]) that a product needs to build its child-table,
+//! application-NV, and security-journal
 //! accessors. Because the board token cannot be cloned or reconstructed,
 //! and each partition token is itself consumed exactly once by
 //! `flash::AppNvFlash::new`/`flash::SecurityFlash::new` (only compiled for `target_arch = "tc32"`), a product can
@@ -79,6 +81,13 @@ impl OnboardFlashToken for tlsr8258_zbeacon_ts011f_bl0937::OnboardFlash {}
 /// helper, only compiled for `target_arch = "tc32"`).
 pub struct AppNvPartition(());
 
+/// Exclusive right to construct the Zigbee child-table journal flash
+/// accessor. Produced only by [`split_onboard_flash`] and consumed exactly
+/// once by `flash::ChildTableFlash::new` (or the
+/// `flash::child_table_store` helper, only compiled for `target_arch =
+/// "tc32"`).
+pub struct ChildTablePartition(());
+
 /// Exclusive right to construct the Zigbee security-journal flash
 /// accessor. Produced only by [`split_onboard_flash`] and consumed exactly
 /// once by `flash::SecurityFlash::new` (or the `flash::security_store`
@@ -88,13 +97,20 @@ pub struct SecurityPartition(());
 /// Split a board's single onboard-flash ownership token into the disjoint
 /// partition tokens this workspace's products use.
 ///
-/// `token` is consumed by value. Combined with [`AppNvPartition`] and
-/// [`SecurityPartition`] not implementing `Clone`/`Copy`, this makes it
+/// `token` is consumed by value. Combined with [`ChildTablePartition`],
+/// [`AppNvPartition`], and [`SecurityPartition`] not implementing
+/// `Clone`/`Copy`, this makes it
 /// impossible for safe code to derive two independent accessors over the
 /// same physical region: splitting the *same* onboard-flash token twice
 /// does not type-check because the first call already moved it.
-pub fn split_onboard_flash<T: OnboardFlashToken>(_token: T) -> (AppNvPartition, SecurityPartition) {
-    (AppNvPartition(()), SecurityPartition(()))
+pub fn split_onboard_flash<T: OnboardFlashToken>(
+    _token: T,
+) -> (ChildTablePartition, AppNvPartition, SecurityPartition) {
+    (
+        ChildTablePartition(()),
+        AppNvPartition(()),
+        SecurityPartition(()),
+    )
 }
 
 /// Compute the physical flash address for a `length`-byte access at
@@ -102,11 +118,12 @@ pub fn split_onboard_flash<T: OnboardFlashToken>(_token: T) -> (AppNvPartition, 
 /// `region_start`, or `None` if the access would leave the partition or
 /// overflow an address.
 ///
-/// This is the shared bounds check behind both `flash::AppNvFlash` and
-/// `flash::SecurityFlash`; it is plain, `const`-friendly arithmetic with
-/// no hardware dependency, so it is exercised directly by this crate's host
-/// tests even though the `NorFlash` wrappers themselves only build for
-/// `target_arch = "tc32"`.
+/// This is the host-testable model of the partition bounds rule that the
+/// HAL `FlashRegion` behind `flash::ChildTableFlash`, `flash::AppNvFlash`,
+/// and `flash::SecurityFlash` enforces on the `tc32` target; it is plain,
+/// `const`-friendly arithmetic with no hardware dependency, so it is
+/// exercised directly by this crate's host tests even though the `NorFlash`
+/// wrappers themselves only build for `target_arch = "tc32"`.
 pub const fn checked_partition_offset(
     region_start: u32,
     region_size: usize,
@@ -171,17 +188,31 @@ mod tests {
 
     #[test]
     fn partition_tokens_are_zero_sized() {
+        assert_eq!(size_of::<ChildTablePartition>(), 0);
         assert_eq!(size_of::<AppNvPartition>(), 0);
         assert_eq!(size_of::<SecurityPartition>(), 0);
     }
 
     #[test]
-    fn split_onboard_flash_yields_both_partition_tokens() {
-        let (_app_nv, _security) = split_onboard_flash(TestToken);
+    fn split_onboard_flash_yields_all_partition_tokens() {
+        let (_children, _app_nv, _security) = split_onboard_flash(TestToken);
     }
 
     #[test]
     fn bounds_check_accepts_in_range_access_and_rejects_overflow() {
+        // Child-table journal: 0x2000 bytes starting at 0x70000.
+        assert_eq!(
+            checked_partition_offset(0x7_0000, 0x2000, 0, 512),
+            Some(0x7_0000)
+        );
+        assert_eq!(
+            checked_partition_offset(0x7_0000, 0x2000, 0x1E00, 512),
+            Some(0x7_1E00)
+        );
+        assert_eq!(
+            checked_partition_offset(0x7_0000, 0x2000, 0x1E00, 513),
+            None
+        );
         // Security journal: 0x2000 bytes starting at 0x74000.
         assert_eq!(
             checked_partition_offset(0x7_4000, 0x2000, 0, 128),
@@ -202,11 +233,12 @@ mod tests {
     }
 
     #[test]
-    fn application_nv_and_security_partitions_are_adjacent_and_disjoint() {
+    fn child_application_and_security_partitions_are_adjacent_and_disjoint() {
         for layout in [TLSR8258_512K_LAYOUT, TLSR8258_1M_LAYOUT] {
             assert!(layout.validate().is_ok());
+            assert_eq!(layout.child_table_journal.end, layout.application_nv.start);
             assert_eq!(layout.application_nv.end, layout.security_journal.start);
-            assert!(layout.firmware.end <= layout.application_nv.start);
+            assert!(layout.firmware.end <= layout.child_table_journal.start);
         }
     }
 
@@ -248,6 +280,16 @@ mod tests {
     fn linker_scripts_match_flash_layout_catalog() {
         let script_512k = include_str!("../../link/tlsr8258-512k.x");
         let layout = TLSR8258_512K_LAYOUT;
+        assert_symbol_assignment(
+            script_512k,
+            "_child_nv_start_",
+            layout.child_table_journal.start,
+        );
+        assert_symbol_assignment(
+            script_512k,
+            "_child_nv_end_",
+            layout.child_table_journal.end,
+        );
         assert_symbol_assignment(script_512k, "_app_nv_start_", layout.application_nv.start);
         assert_symbol_assignment(script_512k, "_app_nv_end_", layout.application_nv.end);
         assert_symbol_assignment(
@@ -268,9 +310,16 @@ mod tests {
         assert_symbol_assignment(script_512k, "_factory_data_end_", layout.factory_data.end);
         assert_symbol_assignment(script_512k, "_flash_capacity_", layout.capacity);
         assert!(script_512k.split("_candidate_energy_start_").count() == 1);
+        assert!(script_512k.contains("ASSERT(_bin_size_ < _child_nv_start_"));
 
         let script_1m = include_str!("../../link/tlsr8258-1m.x");
         let layout = TLSR8258_1M_LAYOUT;
+        assert_symbol_assignment(
+            script_1m,
+            "_child_nv_start_",
+            layout.child_table_journal.start,
+        );
+        assert_symbol_assignment(script_1m, "_child_nv_end_", layout.child_table_journal.end);
         assert_symbol_assignment(script_1m, "_app_nv_start_", layout.application_nv.start);
         assert_symbol_assignment(script_1m, "_app_nv_end_", layout.application_nv.end);
         assert_symbol_assignment(
@@ -287,6 +336,7 @@ mod tests {
             .expect("1 MiB layout documents a candidate energy region");
         assert_symbol_assignment(script_1m, "_candidate_energy_start_", candidate.start);
         assert_symbol_assignment(script_1m, "_candidate_energy_end_", candidate.end);
+        assert!(script_1m.contains("ASSERT(_bin_size_ < _child_nv_start_"));
     }
 
     /// The build/check helper is documentation as much as it is a script:
@@ -318,6 +368,10 @@ mod tests {
         assert!(
             script.to_lowercase().contains("experimental"),
             "scripts/tlsr8258-firmware.sh must label its output experimental"
+        );
+        assert!(
+            script.contains("if (( size >= child_nv_start )); then"),
+            "the helper must reject an image ending at the child partition boundary"
         );
     }
 }

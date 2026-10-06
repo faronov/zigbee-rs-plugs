@@ -144,6 +144,10 @@ impl ProtectionEngine {
         self.tripped
     }
 
+    pub const fn sample_violation(&self, sample: ElectricalSample) -> Option<TripReason> {
+        self.violation(sample)
+    }
+
     pub fn clear_latch(&mut self) {
         self.pending = None;
         self.tripped = None;
@@ -197,7 +201,7 @@ impl ProtectionEngine {
         ProtectionAction::Trip(reason)
     }
 
-    fn violation(&self, sample: ElectricalSample) -> Option<TripReason> {
+    const fn violation(&self, sample: ElectricalSample) -> Option<TripReason> {
         if self.config.min_voltage_mv != 0 && sample.voltage_mv < self.config.min_voltage_mv {
             return Some(TripReason::UnderVoltage);
         }

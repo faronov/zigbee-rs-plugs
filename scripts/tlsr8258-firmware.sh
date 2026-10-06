@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_TOOLCHAIN="${ROOT_DIR}/.toolchains/tc32-stage2-tc32-45"
+DEFAULT_TOOLCHAIN="${ROOT_DIR}/.toolchains/tc32-1.98.1-20261003-31a272"
 TC32_TOOLCHAIN="${TC32_TOOLCHAIN:-$DEFAULT_TOOLCHAIN}"
 CARGO_BIN="${CARGO_BIN:-$TC32_TOOLCHAIN/bin/cargo}"
 LLVM_NM="${LLVM_NM:-$TC32_TOOLCHAIN/llvm/bin/llvm-nm}"
@@ -47,7 +47,7 @@ usage: scripts/tlsr8258-firmware.sh <check|build> <crate-dir> <binary-name> <512
 
 Environment:
   TC32_TOOLCHAIN  modern-tc32 (https://github.com/modern-tc32) toolchain
-                  root. Default: ROOT/.toolchains/tc32-stage2-tc32-45
+                  root. Default: ROOT/.toolchains/tc32-1.98.1-20261003-31a272
   CARGO_BIN, LLVM_NM, LLVM_OBJCOPY  override individual tool paths
 
 This script never flashes a device. It intentionally has no `flash`
@@ -127,6 +127,7 @@ verify_symbols() {
     # the role tag alone would not prove the parent server code was retained.
     local present_all=(
         "zigbee_runtime::role::Router"
+        "zigbee_runtime::child_store::ChildTableJournal"
         "handle_child_rejoin_request"
         "zigbee_nwk::NwkLayer"
     )
@@ -156,6 +157,7 @@ verify_symbols() {
     local absent_all=(
         "zigbee_runtime::role::EndDevice"
         "zigbee_runtime::role::RelayRouter"
+        "zigbee_runtime::child_store::RamChildTableStore"
         "begin_end_device_timeout_negotiation"
         "resume_end_device_timeout"
         "advance_end_device_timeout"
@@ -177,7 +179,7 @@ verify_symbols() {
         exit 1
     fi
 
-    echo "symbol-gate OK (EXPERIMENTAL, not hardware-proven): hardware AES present and software AES absent; parent Router path present (role::Router, handle_child_rejoin_request, nlme_start_router); ED-timeout client + EndDevice/RelayRouter roles absent"
+    echo "symbol-gate OK (EXPERIMENTAL, not hardware-proven): hardware AES and durable ChildTableJournal present; software AES and RamChildTableStore absent; parent Router path present; ED-timeout client + EndDevice/RelayRouter roles absent"
 }
 
 verify_layout() {
@@ -191,6 +193,7 @@ verify_layout() {
     local sdata=0 ebss=0 svc_bottom=0
     local rf_dma_start=0 rf_dma_end=0
     local rf_rx_buf=0 rf_tx_buf=0 rf_ack_tx_buf=0
+    local child_nv_start=0 child_nv_end=0
     local app_nv_start=0 app_nv_end=0
     local security_nv_start=0 security_nv_end=0
     local factory_data_start=0 factory_data_end=0
@@ -214,6 +217,8 @@ verify_layout() {
             *RF_RX_BUF) rf_rx_buf=$((16#$value)) ;;
             *RF_TX_BUF) rf_tx_buf=$((16#$value)) ;;
             *RF_ACK_TX_BUF) rf_ack_tx_buf=$((16#$value)) ;;
+            _child_nv_start_) child_nv_start=$((16#$value)) ;;
+            _child_nv_end_) child_nv_end=$((16#$value)) ;;
             _app_nv_start_) app_nv_start=$((16#$value)) ;;
             _app_nv_end_) app_nv_end=$((16#$value)) ;;
             _security_nv_start_) security_nv_start=$((16#$value)) ;;
@@ -296,11 +301,30 @@ verify_layout() {
     fi
 
     # Product-owned flash partitions (this script's addition over
-    # zigbee-rs's tools/tlsr8258-firmware.sh, which only checked the
-    # security journal because tlsr8258-tb04 has no separate app-NV
-    # partition).
-    if (( app_nv_start == 0 || app_nv_end == 0 || security_nv_start == 0 )); then
-        echo "layout-check FAIL: linker script did not export _app_nv_*/_security_nv_* symbols" >&2
+    # zigbee-rs's tools/tlsr8258-firmware.sh, extended here for this product
+    # family's child-table, application, and security journals.
+    if (( child_nv_start == 0 || child_nv_end == 0 || app_nv_start == 0 || app_nv_end == 0 || security_nv_start == 0 || security_nv_end == 0 )); then
+        echo "layout-check FAIL: linker script did not export child/app/security NV symbols" >&2
+        exit 1
+    fi
+    if (( child_nv_start != 0x70000 || child_nv_end != 0x72000 )); then
+        printf 'layout-check FAIL: child-table journal is [0x%X..0x%X), expected [0x70000..0x72000)\n' \
+            "$child_nv_start" "$child_nv_end" >&2
+        exit 1
+    fi
+    if (( app_nv_start != 0x72000 || app_nv_end != 0x74000 )); then
+        printf 'layout-check FAIL: application-NV is [0x%X..0x%X), expected [0x72000..0x74000)\n' \
+            "$app_nv_start" "$app_nv_end" >&2
+        exit 1
+    fi
+    if (( security_nv_start != 0x74000 || security_nv_end != 0x76000 )); then
+        printf 'layout-check FAIL: security journal is [0x%X..0x%X), expected [0x74000..0x76000)\n' \
+            "$security_nv_start" "$security_nv_end" >&2
+        exit 1
+    fi
+    if (( child_nv_end != app_nv_start )); then
+        printf 'layout-check FAIL: child-table journal ends at 0x%X, application-NV starts at 0x%X\n' \
+            "$child_nv_end" "$app_nv_start" >&2
         exit 1
     fi
     if (( app_nv_end != security_nv_start )); then
@@ -331,20 +355,20 @@ verify_layout() {
 
     local size
     size=$(wc -c < "$bin" | tr -d ' ')
-    if (( size > app_nv_start )); then
-        printf 'layout-check FAIL: image is %d bytes, application-NV partition starts at 0x%X\n' \
-            "$size" "$app_nv_start" >&2
+    if (( size >= child_nv_start )); then
+        printf 'layout-check FAIL: image is %d bytes, must end before child-table journal at 0x%X\n' \
+            "$size" "$child_nv_start" >&2
         exit 1
     fi
 
-    printf 'layout-check OK (EXPERIMENTAL, not hardware-proven): image=%d B app_nv=[0x%X..0x%X) security_nv=[0x%X..0x%X) factory_data=[0x%X..0x%X) capacity=0x%X ram_code=%d B rf_dma=[0x%X..0x%X) (rx=0x%X tx=0x%X ack=0x%X)\n' \
-        "$size" "$app_nv_start" "$app_nv_end" "$security_nv_start" "$security_nv_end" \
+    printf 'layout-check OK (EXPERIMENTAL, not hardware-proven): image=%d B child_nv=[0x%X..0x%X) app_nv=[0x%X..0x%X) security_nv=[0x%X..0x%X) factory_data=[0x%X..0x%X) capacity=0x%X ram_code=%d B rf_dma=[0x%X..0x%X) (rx=0x%X tx=0x%X ack=0x%X)\n' \
+        "$size" "$child_nv_start" "$child_nv_end" "$app_nv_start" "$app_nv_end" "$security_nv_start" "$security_nv_end" \
         "$factory_data_start" "$factory_data_end" "$flash_capacity" \
         "$((ramcode_end - ramcode_start))" "$rf_dma_start" "$rf_dma_end" \
         "$rf_rx_buf" "$rf_tx_buf" "$rf_ack_tx_buf"
 
     # Machine-readable size/budget artifact. The image budget is the start of
-    # the product-owned application-NV partition: the `.bin` must always fit
+    # the product-owned child-table partition: the `.bin` must always fit
     # strictly below it (already hard-failed above), so `headroom_bytes` is the
     # remaining flash before the image would collide with persistent state.
     # This is EXPERIMENTAL metadata for CI trend tracking, never a hardware
@@ -352,7 +376,7 @@ verify_layout() {
     if [[ -n "$json_out" ]]; then
         local sha
         sha="$(sha256_of "$bin")"
-        local headroom=$((app_nv_start - size))
+        local headroom=$((child_nv_start - size))
         cat >"$json_out" <<EOF
 {
   "experimental": true,
@@ -360,8 +384,9 @@ verify_layout() {
   "product": "$feature",
   "layout": "$layout",
   "image_bytes": $size,
-  "budget_bytes": $app_nv_start,
+  "budget_bytes": $child_nv_start,
   "headroom_bytes": $headroom,
+  "child_nv": ["0x$(printf '%X' "$child_nv_start")", "0x$(printf '%X' "$child_nv_end")"],
   "app_nv_start": "0x$(printf '%X' "$app_nv_start")",
   "security_nv": ["0x$(printf '%X' "$security_nv_start")", "0x$(printf '%X' "$security_nv_end")"],
   "factory_data": ["0x$(printf '%X' "$factory_data_start")", "0x$(printf '%X' "$factory_data_end")"],
@@ -371,7 +396,7 @@ verify_layout() {
 }
 EOF
         printf 'size-json written: %s (image=%d B budget=%d B headroom=%d B sha256=%s)\n' \
-            "$json_out" "$size" "$app_nv_start" "$headroom" "$sha"
+            "$json_out" "$size" "$child_nv_start" "$headroom" "$sha"
     fi
 }
 
