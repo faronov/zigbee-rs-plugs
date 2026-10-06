@@ -131,9 +131,104 @@ impl ButtonGesture {
     }
 }
 
+/// What one completed [`ButtonGestureEvent`] means for a plug.
+///
+/// Produced by [`button_action`]; the local-control service performs the
+/// output side (relay, LED) and hands Zigbee requests to the main loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ButtonAction {
+    /// Acknowledge a latched protection or meter trip. Never energizes the
+    /// relay; a separate press or On command is required afterwards.
+    ClearTrip,
+    /// Toggle the relay locally, reported through ZCL OnOff like a remote
+    /// Toggle command.
+    ToggleRelay,
+    /// Ask the Zigbee frontend to start Network Steering now. A factory-new
+    /// plug that left a network (or was removed by the coordinator) performs
+    /// no network search until this request.
+    RequestCommissioning,
+    /// Journal-aware factory reset followed by a fresh Network Steering run.
+    FactoryReset,
+}
+
+/// Map a completed button gesture to a plug action.
+///
+/// - A long hold always factory-resets, even while tripped or unjoined.
+/// - A short press first acknowledges a latched trip, so the same physical
+///   control can never be used to force power back on while unsafe.
+/// - Otherwise a short press toggles the relay while joined and requests
+///   commissioning while not joined (factory-new, after a Leave, or while a
+///   join backoff is running).
+///
+/// `joined` is the last network state published by the main loop. The main
+/// loop resolves the small race where the node joined after publication by
+/// treating a refused commissioning request on a joined node as a toggle.
+pub const fn button_action(
+    gesture: ButtonGestureEvent,
+    safety_tripped: bool,
+    joined: bool,
+) -> ButtonAction {
+    match gesture {
+        ButtonGestureEvent::LongPress => ButtonAction::FactoryReset,
+        ButtonGestureEvent::ShortPress if safety_tripped => ButtonAction::ClearTrip,
+        ButtonGestureEvent::ShortPress if joined => ButtonAction::ToggleRelay,
+        ButtonGestureEvent::ShortPress => ButtonAction::RequestCommissioning,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn long_press_always_factory_resets() {
+        for tripped in [false, true] {
+            for joined in [false, true] {
+                assert_eq!(
+                    button_action(ButtonGestureEvent::LongPress, tripped, joined),
+                    ButtonAction::FactoryReset
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn short_press_acknowledges_a_trip_before_anything_else() {
+        for joined in [false, true] {
+            assert_eq!(
+                button_action(ButtonGestureEvent::ShortPress, true, joined),
+                ButtonAction::ClearTrip
+            );
+        }
+    }
+
+    #[test]
+    fn short_press_toggles_only_while_joined() {
+        assert_eq!(
+            button_action(ButtonGestureEvent::ShortPress, false, true),
+            ButtonAction::ToggleRelay
+        );
+        assert_eq!(
+            button_action(ButtonGestureEvent::ShortPress, false, false),
+            ButtonAction::RequestCommissioning
+        );
+    }
+
+    #[test]
+    fn released_reset_hold_never_becomes_a_commissioning_request() {
+        let mut gesture = ButtonGesture::new(30, 4_000);
+        let mut actions = [None; 4];
+        let mut count = 0;
+        for (now_ms, pressed) in [(0, true), (30, true), (4_030, true), (4_100, false)] {
+            if let Some(event) = gesture.sample(now_ms, pressed) {
+                actions[count] = Some(button_action(event, false, false));
+                count += 1;
+            }
+        }
+        assert_eq!(gesture.sample(4_130, false), None);
+        assert_eq!(count, 1);
+        assert_eq!(actions[0], Some(ButtonAction::FactoryReset));
+    }
 
     #[test]
     fn short_bounce_does_not_produce_an_edge() {

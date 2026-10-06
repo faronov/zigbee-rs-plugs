@@ -31,7 +31,9 @@
 pub mod button;
 pub mod indicator;
 
-pub use button::{ButtonDebouncer, ButtonEdge, ButtonGesture, ButtonGestureEvent};
+pub use button::{
+    ButtonAction, ButtonDebouncer, ButtonEdge, ButtonGesture, ButtonGestureEvent, button_action,
+};
 pub use indicator::{NetworkStatus, status_led_on};
 use zigbee_plug_core::{
     ElectricalSample, PlugSettings, ProtectionAction, ProtectionConfig, ProtectionEngine,
