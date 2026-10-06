@@ -2,8 +2,9 @@
 //!
 //! This crate owns the product-family behavior shared by the BL0942 and
 //! BL0937 firmware compositions: local relay reconciliation, protection
-//! vetoes, meter servicing, factory-reset ordering, the 100 ms On/Off tick,
-//! and wear-bounded application-state checkpoints. Board GPIO, Timer1, meter
+//! vetoes, meter servicing, button commissioning requests, factory-reset
+//! ordering, the 100 ms On/Off tick, and wear-bounded application-state
+//! checkpoints. Board GPIO, Timer1, meter
 //! acquisition, flash construction, and product identity remain in the
 //! composition root.
 //!
@@ -22,7 +23,9 @@ mod status;
 
 #[cfg(feature = "router")]
 pub use app::PlugRouterApp;
-pub use app::{AlwaysOnEndDevicePlugApp, PlugRouterError, PlugStepOutcome};
+pub use app::{
+    AlwaysOnEndDevicePlugApp, CommissioningRequestOutcome, PlugRouterError, PlugStepOutcome,
+};
 pub use capabilities::{LocalControl, LocalRelaySelection, PlugClock, RelayCommand};
 pub use meter::{
     MeterFault, MeterHealthPolicy, MeterSafetyState, MeterService, MeterServiceOutcome,

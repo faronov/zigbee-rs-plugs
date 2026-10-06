@@ -66,6 +66,14 @@ impl LocalControl for TlsrLocalControl {
         local_control::take_factory_reset_requested()
     }
 
+    fn set_network_joined(&mut self, joined: bool) {
+        local_control::set_network_joined(joined);
+    }
+
+    fn take_commissioning_requested(&mut self) -> bool {
+        local_control::take_commissioning_requested()
+    }
+
     fn take_meter_timeout(&mut self) -> Option<MeterFault> {
         local_control::take_meter_timeout()
     }

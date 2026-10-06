@@ -58,6 +58,20 @@ impl From<NvError> for PlugRouterError {
     }
 }
 
+/// How the main loop resolved a short press that asked for commissioning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommissioningRequestOutcome {
+    /// The frontend cleared any post-Leave wait or join backoff; Network
+    /// Steering runs on the next step.
+    Started,
+    /// The node joined after the button service last observed the network
+    /// state, so the press toggled the relay as a joined press does.
+    ToggledRelay,
+    /// The frontend refused the request without being joined (a factory
+    /// reset was still pending).
+    Ignored,
+}
+
 #[derive(Debug)]
 pub struct PlugStepOutcome {
     pub network: StepEvents,
@@ -66,6 +80,7 @@ pub struct PlugStepOutcome {
     pub checkpoint: CheckpointOutcome,
     pub local_selection: Option<LocalRelaySelection>,
     pub factory_reset_requested: bool,
+    pub commissioning_request: Option<CommissioningRequestOutcome>,
     pub on_off_ticked: bool,
 }
 
@@ -159,6 +174,9 @@ trait PlugNetworkFrontend {
     fn plug_mut(&mut self) -> &mut ZigbeePlug;
     fn local_mut(&mut self) -> &mut Self::Local;
     fn factory_reset_pending(&self) -> bool;
+    fn is_joined(&self) -> bool;
+    fn request_commissioning(&mut self) -> bool;
+    fn awaiting_commissioning_request(&self) -> bool;
     fn initialize_frontend(&mut self) -> impl Future<Output = Result<(), RouterAppError>> + '_;
     fn step_frontend(&mut self) -> impl Future<Output = Result<StepEvents, RouterAppError>> + '_;
     async fn urgent_factory_reset_frontend(&mut self) -> Result<(), RouterAppError>;
@@ -186,6 +204,18 @@ where
 
     fn factory_reset_pending(&self) -> bool {
         ParentRouterApp::factory_reset_pending(self)
+    }
+
+    fn is_joined(&self) -> bool {
+        self.node().device().is_joined()
+    }
+
+    fn request_commissioning(&mut self) -> bool {
+        ParentRouterApp::request_commissioning(self)
+    }
+
+    fn awaiting_commissioning_request(&self) -> bool {
+        ParentRouterApp::awaiting_commissioning_request(self)
     }
 
     fn initialize_frontend(&mut self) -> impl Future<Output = Result<(), RouterAppError>> + '_ {
@@ -225,6 +255,18 @@ where
 
     fn factory_reset_pending(&self) -> bool {
         AlwaysOnEndDeviceApp::factory_reset_pending(self)
+    }
+
+    fn is_joined(&self) -> bool {
+        self.node().device().is_joined()
+    }
+
+    fn request_commissioning(&mut self) -> bool {
+        AlwaysOnEndDeviceApp::request_commissioning(self)
+    }
+
+    fn awaiting_commissioning_request(&self) -> bool {
+        AlwaysOnEndDeviceApp::awaiting_commissioning_request(self)
     }
 
     fn initialize_frontend(&mut self) -> impl Future<Output = Result<(), RouterAppError>> + '_ {
@@ -347,8 +389,7 @@ where
     }
 
     fn apply_outputs(&mut self, state: RelayLedState) {
-        let safety_tripped =
-            self.controller.trip_reason().is_some() || self.meter_safety.fault.is_some();
+        let safety_tripped = self.safety_tripped();
         let command = RelayCommand {
             relay_on: state.relay_on && self.meter_safety.relay_allowed() && !safety_tripped,
             safety_tripped,
@@ -382,7 +423,8 @@ where
                 .local_mut()
                 .acknowledge_local_selection(selection.sequence);
         }
-        if self.router.local_mut().take_clear_trip_requested() {
+        let trip_cleared = self.router.local_mut().take_clear_trip_requested();
+        if trip_cleared {
             self.controller.clear_protection_latch();
             self.meter_safety.clear_latch(now_ms);
             self.router.local_mut().arm_meter_timeout(
@@ -391,7 +433,63 @@ where
             );
         }
         self.reconcile();
+        if trip_cleared && !self.safety_tripped() {
+            // The fault indication replaced the network indication while the
+            // trip was latched; router status is only published on change.
+            let status = self.network_indicator();
+            self.router.local_mut().set_network_status(status);
+        }
         selection
+    }
+
+    fn safety_tripped(&self) -> bool {
+        self.controller.trip_reason().is_some() || self.meter_safety.fault.is_some()
+    }
+
+    /// Indicator state derived from the frontend, for use when the
+    /// change-driven router status cannot be relied on.
+    fn network_indicator(&self) -> NetworkStatus {
+        if self.router.awaiting_commissioning_request() {
+            NetworkStatus::Offline
+        } else if self.router.is_joined() {
+            NetworkStatus::Joined
+        } else {
+            NetworkStatus::Searching
+        }
+    }
+
+    /// Publish the joined state used by the button service and keep a
+    /// factory-new node that waits for a commissioning request dark instead
+    /// of showing the generic "starting" blink.
+    fn publish_network_state(&mut self) {
+        let joined = self.router.is_joined();
+        let awaiting = self.router.awaiting_commissioning_request();
+        let tripped = self.safety_tripped();
+        let local = self.router.local_mut();
+        local.set_network_joined(joined);
+        if awaiting && !tripped {
+            local.set_network_status(NetworkStatus::Offline);
+        }
+    }
+
+    /// Resolve a short press that the button service classified as a
+    /// commissioning request.
+    fn service_commissioning_request(&mut self) -> Option<CommissioningRequestOutcome> {
+        if !self.router.local_mut().take_commissioning_requested() {
+            return None;
+        }
+        let outcome = if self.router.request_commissioning() {
+            CommissioningRequestOutcome::Started
+        } else if self.router.is_joined() {
+            let relay_on = self.router.plug_mut().is_on();
+            self.router.plug_mut().local_set_on(!relay_on);
+            self.reconcile();
+            CommissioningRequestOutcome::ToggledRelay
+        } else {
+            CommissioningRequestOutcome::Ignored
+        };
+        self.publish_network_state();
+        Some(outcome)
     }
 
     fn take_factory_reset_requested(&mut self) -> bool {
@@ -419,6 +517,9 @@ where
         )?;
         self.router.urgent_factory_reset_frontend().await?;
         self.router.local_mut().release_factory_reset_inhibit();
+        // A commissioning request latched meanwhile stays queued: after a
+        // network-requested reset the frontend waits for exactly that press.
+        self.publish_network_state();
         Ok(checkpoint)
     }
 
@@ -483,6 +584,7 @@ where
         if self.router.factory_reset_pending() || factory_reset_requested {
             let _ = self.urgent_factory_reset(now_ms).await?;
         }
+        self.publish_network_state();
         Ok(())
     }
 
@@ -504,15 +606,18 @@ where
                 checkpoint,
                 local_selection,
                 factory_reset_requested,
+                commissioning_request: None,
                 on_off_ticked: false,
             });
         }
+        let commissioning_request = self.service_commissioning_request();
 
         let meter_now_ms = self.clock.now_ms();
         let meter = self.meter.service(meter_now_ms);
         self.process_meter(meter_now_ms, meter);
 
         let network = self.router.step_frontend().await?;
+        self.publish_network_state();
 
         // Recheck age after a potentially long platform operation, then
         // reconcile remote commands only while metering is still healthy.
@@ -528,6 +633,7 @@ where
                 checkpoint,
                 local_selection,
                 factory_reset_requested,
+                commissioning_request,
                 on_off_ticked: false,
             });
         }
@@ -585,6 +691,7 @@ where
             checkpoint,
             local_selection,
             factory_reset_requested,
+            commissioning_request,
             on_off_ticked,
         })
     }

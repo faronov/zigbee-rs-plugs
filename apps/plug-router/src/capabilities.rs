@@ -36,6 +36,16 @@ pub trait LocalControl {
 
     fn take_factory_reset_requested(&mut self) -> bool;
 
+    /// Publish whether the node is currently joined.
+    ///
+    /// The button service uses it to decide whether a short press toggles
+    /// the relay (joined) or requests commissioning (not joined).
+    fn set_network_joined(&mut self, joined: bool);
+
+    /// Consume a short press that asked the network frontend to start
+    /// Network Steering.
+    fn take_commissioning_requested(&mut self) -> bool;
+
     /// Consume a timeout raised by the interrupt-driven physical watchdog.
     fn take_meter_timeout(&mut self) -> Option<MeterFault>;
 

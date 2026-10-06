@@ -12,7 +12,9 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 use plug_router_app::MeterFault;
 use tlsr8258_hal::gpio::Pin;
 use tlsr8258_hal::timer;
-use zigbee_plug_controller::{ButtonGesture, ButtonGestureEvent, NetworkStatus, status_led_on};
+use zigbee_plug_controller::{
+    ButtonAction, ButtonGesture, NetworkStatus, button_action, status_led_on,
+};
 use zigbee_plug_core::TickMillis;
 
 const TIMER_PERIOD_MS: u32 = 10;
@@ -55,6 +57,8 @@ static LOCAL_RELAY_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 static ACKED_LOCAL_RELAY_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 static FACTORY_RESET_REQUESTED: AtomicBool = AtomicBool::new(false);
 static CLEAR_TRIP_REQUESTED: AtomicBool = AtomicBool::new(false);
+static NETWORK_JOINED: AtomicBool = AtomicBool::new(false);
+static COMMISSIONING_REQUESTED: AtomicBool = AtomicBool::new(false);
 static METER_TIMEOUT_ARMED: AtomicBool = AtomicBool::new(false);
 static METER_TIMEOUT_DEADLINE_MS: AtomicU32 = AtomicU32::new(0);
 static METER_TIMEOUT_KIND: AtomicU8 = AtomicU8::new(METER_FAULT_NONE);
@@ -162,17 +166,28 @@ pub fn handle_timer_irq() {
     }
 
     let pressed = (state.read_button)(&state.button);
-    match state.gesture.sample(now_ms, pressed) {
-        Some(ButtonGestureEvent::ShortPress) if safety_tripped => {
+    let joined = NETWORK_JOINED.load(Ordering::Acquire);
+    let action = state
+        .gesture
+        .sample(now_ms, pressed)
+        .map(|gesture| button_action(gesture, safety_tripped, joined));
+    match action {
+        Some(ButtonAction::ClearTrip) => {
             CLEAR_TRIP_REQUESTED.store(true, Ordering::Release);
         }
-        Some(ButtonGestureEvent::ShortPress) => {
+        Some(ButtonAction::ToggleRelay) => {
             state.desired_relay_on = !state.desired_relay_on;
             LOCAL_RELAY_ON.store(state.desired_relay_on, Ordering::Release);
             let sequence = LOCAL_RELAY_SEQUENCE.load(Ordering::Acquire);
             LOCAL_RELAY_SEQUENCE.store(sequence.wrapping_add(1), Ordering::Release);
         }
-        Some(ButtonGestureEvent::LongPress) => {
+        Some(ButtonAction::RequestCommissioning) => {
+            // Zigbee state is only touched from the main loop; blink at once
+            // so the press is acknowledged while steering is scheduled.
+            COMMISSIONING_REQUESTED.store(true, Ordering::Release);
+            NETWORK_STATUS.store(NetworkStatus::Searching as u8, Ordering::Release);
+        }
+        Some(ButtonAction::FactoryReset) => {
             let flags = ISR_INHIBIT_FLAGS.load(Ordering::Acquire);
             ISR_INHIBIT_FLAGS.store(flags | ISR_INHIBIT_FACTORY_RESET, Ordering::Release);
             SAFETY_TRIPPED.store(true, Ordering::Release);
@@ -222,6 +237,20 @@ pub fn set_relay_inhibited(inhibited: bool) {
 
 pub fn set_network_status(status: NetworkStatus) {
     NETWORK_STATUS.store(status as u8, Ordering::Release);
+}
+
+/// Publish whether the node is joined so a short press toggles the relay
+/// (joined) or requests Network Steering (not joined).
+pub fn set_network_joined(joined: bool) {
+    NETWORK_JOINED.store(joined, Ordering::Release);
+}
+
+pub fn take_commissioning_requested() -> bool {
+    tlsr8258_hal::mmio::with_irqs_disabled(|| {
+        let requested = COMMISSIONING_REQUESTED.load(Ordering::Acquire);
+        COMMISSIONING_REQUESTED.store(false, Ordering::Release);
+        requested
+    })
 }
 
 pub fn take_factory_reset_requested() -> bool {

@@ -6,13 +6,13 @@ use std::rc::Rc;
 
 use plug_router_app::{
     APP_STATE_CHECKPOINT_INTERVAL_MS, AlwaysOnEndDevicePlugApp, AppStateCheckpoint,
-    CheckpointOutcome, LocalControl, LocalRelaySelection, MeterFault, MeterHealthPolicy,
-    MeterSafetyState, MeterService, MeterServiceOutcome, PlugClock, PlugRouterApp, PlugRouterError,
-    PlugStatus, RelayCommand, network_status_for_router,
+    CheckpointOutcome, CommissioningRequestOutcome, LocalControl, LocalRelaySelection, MeterFault,
+    MeterHealthPolicy, MeterSafetyState, MeterService, MeterServiceOutcome, PlugClock,
+    PlugRouterApp, PlugRouterError, PlugStatus, RelayCommand, network_status_for_router,
 };
 use router_app::{
-    AlwaysOnEndDeviceApp, NoDiagnostics, NoSupervisor, NodeArchetype, ParentRouterApp,
-    PersistentChildren, RouterParts, RouterPolicy, RouterStatus,
+    AlwaysOnEndDeviceApp, DiagnosticEvent, Diagnostics, NoDiagnostics, NoSupervisor, NodeArchetype,
+    ParentRouterApp, PersistentChildren, RouterParts, RouterPolicy, RouterStatus,
 };
 use zigbee_aps::PROFILE_HOME_AUTOMATION;
 use zigbee_aps::frames::{ApsDeliveryMode, ApsFrameControl, ApsFrameType, ApsHeader};
@@ -37,7 +37,8 @@ use zigbee_runtime::power::PowerMode;
 use zigbee_runtime::profile::{ApplicationProfile, DeviceProfile, SmartPlugReporting};
 use zigbee_runtime::role::{EndDevice, Router};
 use zigbee_runtime::security_store::{
-    PersistentSecurityState, RamSecurityStateStore, SecurityStateStore, SecurityStoreError,
+    PersistentReplayCounter, PersistentSecurityState, RamSecurityStateStore,
+    ReplayCounterTombstone, SecurityStateStore, SecurityStoreError,
 };
 use zigbee_runtime::{UserAction, ZigbeeDevice};
 use zigbee_types::{MacAddress, PanId, ShortAddress};
@@ -140,6 +141,9 @@ struct LocalState {
     acknowledgements: Vec<u32>,
     clear_trip: bool,
     factory_reset: bool,
+    commissioning_request: bool,
+    joined: Option<bool>,
+    diagnostics: Vec<DiagnosticEvent>,
     meter_timeout: Option<MeterFault>,
     armed_meter_timeout: Option<(u32, MeterFault)>,
     order: Vec<&'static str>,
@@ -147,6 +151,16 @@ struct LocalState {
 
 #[derive(Clone)]
 struct TestLocal(Rc<RefCell<LocalState>>);
+
+/// Captures the shared router's own lifecycle diagnostics so tests observe
+/// commissioning decisions instead of inferring them from store traffic.
+struct TestDiagnostics(Rc<RefCell<LocalState>>);
+
+impl Diagnostics for TestDiagnostics {
+    fn record(&mut self, event: DiagnosticEvent) {
+        self.0.borrow_mut().diagnostics.push(event);
+    }
+}
 
 impl LocalControl for TestLocal {
     fn set_network_status(&mut self, status: NetworkStatus) {
@@ -176,6 +190,15 @@ impl LocalControl for TestLocal {
     fn take_factory_reset_requested(&mut self) -> bool {
         let mut state = self.0.borrow_mut();
         core::mem::take(&mut state.factory_reset)
+    }
+
+    fn set_network_joined(&mut self, joined: bool) {
+        self.0.borrow_mut().joined = Some(joined);
+    }
+
+    fn take_commissioning_requested(&mut self) -> bool {
+        let mut state = self.0.borrow_mut();
+        core::mem::take(&mut state.commissioning_request)
     }
 
     fn take_meter_timeout(&mut self) -> Option<MeterFault> {
@@ -268,8 +291,10 @@ struct TestNv {
     order: Rc<RefCell<LocalState>>,
 }
 
+/// Records security-state load/reset ordering while delegating durable
+/// snapshot and replay-counter semantics to the runtime's RAM store.
 struct OrderedPlugSecurityStore {
-    state: Option<PersistentSecurityState>,
+    inner: RamSecurityStateStore,
     reset_written: bool,
     order: Rc<RefCell<LocalState>>,
 }
@@ -322,10 +347,16 @@ impl ChildTableStore for RecordingChildStore {
 impl OrderedPlugSecurityStore {
     fn new(order: Rc<RefCell<LocalState>>) -> Self {
         Self {
-            state: None,
+            inner: RamSecurityStateStore::new(),
             reset_written: false,
             order,
         }
+    }
+
+    fn commissioned(order: Rc<RefCell<LocalState>>) -> Self {
+        let mut store = Self::new(order);
+        store.inner.store(&commissioned_state()).unwrap();
+        store
     }
 }
 
@@ -336,16 +367,37 @@ impl SecurityStateStore for OrderedPlugSecurityStore {
         } else {
             "security-load"
         });
-        Ok(self.state)
+        self.inner.load()
     }
 
     fn store(&mut self, state: &PersistentSecurityState) -> Result<(), SecurityStoreError> {
+        self.inner.store(state)?;
         if !state.commissioned {
             self.order.borrow_mut().order.push("security-reset");
             self.reset_written = true;
         }
-        self.state = Some(*state);
         Ok(())
+    }
+
+    fn visit_replay_counters(
+        &mut self,
+        visitor: &mut dyn FnMut(PersistentReplayCounter),
+    ) -> Result<(), SecurityStoreError> {
+        self.inner.visit_replay_counters(visitor)
+    }
+
+    fn commit_replay_counter(
+        &mut self,
+        replay: PersistentReplayCounter,
+    ) -> Result<(), SecurityStoreError> {
+        self.inner.commit_replay_counter(replay)
+    }
+
+    fn tombstone_replay_counters(
+        &mut self,
+        tombstone: ReplayCounterTombstone,
+    ) -> Result<(), SecurityStoreError> {
+        self.inner.tombstone_replay_counters(tombstone)
     }
 }
 
@@ -620,7 +672,7 @@ fn app<'a, S>(
     RamChildTableStore,
     TestLocal,
     NoSupervisor,
-    NoDiagnostics,
+    TestDiagnostics,
     TestMeter,
     TestNv,
     TestClock,
@@ -648,7 +700,7 @@ fn app_with_children<'a, S, C>(
     C,
     TestLocal,
     NoSupervisor,
-    NoDiagnostics,
+    TestDiagnostics,
     TestMeter,
     TestNv,
     TestClock,
@@ -672,7 +724,7 @@ where
         RouterParts::new(
             PlugStatus::new(TestLocal(local.clone())),
             NoSupervisor,
-            NoDiagnostics,
+            TestDiagnostics(local.clone()),
         ),
     )
     .unwrap();
@@ -1371,8 +1423,7 @@ fn network_requested_reset_uses_the_same_relay_checkpoint_transaction() {
     let clock = Rc::new(Cell::new(1_000));
     let mut profile = profile();
     let mut device = device(&mut profile);
-    let mut security = OrderedPlugSecurityStore::new(local.clone());
-    security.state = Some(commissioned_state());
+    let mut security = OrderedPlugSecurityStore::commissioned(local.clone());
     let children = RecordingChildStore::with_table(local.clone(), child_table(EXTENDED_PAN_ID));
     let mut app = app_with_children(
         &mut device,
@@ -1707,6 +1758,245 @@ fn reset_checkpoint_failure_stops_before_network_reset_or_due_steering() {
     assert!(!order.order.contains(&"security-reset"));
     assert!(!order.order.contains(&"steering"));
     assert!(!order.order.contains(&"reset-inhibit-release"));
+}
+
+fn steering_attempts(local: &Rc<RefCell<LocalState>>) -> usize {
+    local
+        .borrow()
+        .diagnostics
+        .iter()
+        .filter(|event| matches!(event, DiagnosticEvent::CommissioningAttempt { .. }))
+        .count()
+}
+
+fn awaiting_request_recorded(local: &Rc<RefCell<LocalState>>) -> bool {
+    local
+        .borrow()
+        .diagnostics
+        .contains(&DiagnosticEvent::AwaitingCommissioningRequest)
+}
+
+#[test]
+fn remote_leave_stays_dark_until_a_short_press_requests_steering() {
+    let local = Rc::new(RefCell::new(LocalState::default()));
+    let clock = Rc::new(Cell::new(1_000));
+    let mut profile = profile();
+    let mut device = device(&mut profile);
+    let mut security = OrderedPlugSecurityStore::commissioned(local.clone());
+    let mut app = app(
+        &mut device,
+        &mut security,
+        &mut profile,
+        local.clone(),
+        clock,
+        TestMeter::new([MeterServiceOutcome::Sample(nominal_sample())]),
+        ProtectionConfig::default(),
+    );
+    block_on(app.initialize()).unwrap();
+    block_on(app.step()).unwrap();
+    assert!(app.router().node().device().is_joined());
+    assert_eq!(local.borrow().joined, Some(true));
+
+    let mac = app.router_mut().node_mut().device_mut().mac_mut();
+    mac.set_rx_delay_us(0);
+    mac.enqueue_rx(McpsDataIndication {
+        src_address: MacAddress::Short(PanId(PAN_ID), ShortAddress::COORDINATOR),
+        dst_address: MacAddress::Short(PanId(PAN_ID), ShortAddress(SHORT_ADDRESS)),
+        lqi: 220,
+        payload: mgmt_leave_frame(false, false),
+        security_use: false,
+    });
+    block_on(app.step()).unwrap();
+    assert!(!app.router().node().device().is_joined());
+    assert!(app.router().awaiting_commissioning_request());
+    assert_eq!(local.borrow().joined, Some(false));
+    assert_eq!(
+        local.borrow().statuses.last(),
+        Some(&NetworkStatus::Offline)
+    );
+    assert!(local.borrow().order.contains(&"security-reset"));
+    assert!(awaiting_request_recorded(&local));
+    local.borrow_mut().diagnostics.clear();
+
+    // Well past every join backoff: a removed plug never searches by itself.
+    for _ in 0..4 {
+        let mac = app.router_mut().node_mut().device_mut().mac_mut();
+        block_on(mac.delay_micros(POLICY.join_retry_max_ms * 1_000));
+        let outcome = block_on(app.step()).unwrap();
+        assert_eq!(outcome.commissioning_request, None);
+    }
+    assert_eq!(steering_attempts(&local), 0);
+    assert_eq!(
+        local.borrow().statuses.last(),
+        Some(&NetworkStatus::Offline)
+    );
+
+    local.borrow_mut().commissioning_request = true;
+    let outcome = block_on(app.step()).unwrap();
+    assert_eq!(
+        outcome.commissioning_request,
+        Some(CommissioningRequestOutcome::Started)
+    );
+    assert!(!app.router().awaiting_commissioning_request());
+    assert!(
+        local
+            .borrow()
+            .diagnostics
+            .contains(&DiagnosticEvent::CommissioningRequested)
+    );
+    assert_eq!(steering_attempts(&local), 1);
+    assert_ne!(
+        local.borrow().statuses.last(),
+        Some(&NetworkStatus::Offline)
+    );
+}
+
+#[test]
+fn press_latched_during_a_network_reset_steers_once_the_reset_commits() {
+    let local = Rc::new(RefCell::new(LocalState::default()));
+    let clock = Rc::new(Cell::new(1_000));
+    let mut profile = profile();
+    let mut device = device(&mut profile);
+    let mut security = OrderedPlugSecurityStore::commissioned(local.clone());
+    let mut app = app(
+        &mut device,
+        &mut security,
+        &mut profile,
+        local.clone(),
+        clock,
+        TestMeter::new([MeterServiceOutcome::Sample(nominal_sample())]),
+        ProtectionConfig::default(),
+    );
+    block_on(app.initialize()).unwrap();
+    block_on(app.step()).unwrap();
+    app.router_mut()
+        .node_mut()
+        .profile_mut()
+        .component_mut()
+        .local_set_on(true);
+    block_on(app.step()).unwrap();
+
+    // Make the reset commit on a later step, as an interrupted checkpoint
+    // would, so the press lands while the reset is still pending.
+    let mac = app.router_mut().node_mut().device_mut().mac_mut();
+    mac.set_rx_delay_us(0);
+    mac.enqueue_rx(McpsDataIndication {
+        src_address: MacAddress::Short(PanId(PAN_ID), ShortAddress::COORDINATOR),
+        dst_address: MacAddress::Short(PanId(PAN_ID), ShortAddress(SHORT_ADDRESS)),
+        lqi: 220,
+        payload: mgmt_leave_frame(false, false),
+        security_use: false,
+    });
+    app.app_state_mut().write_error = Some(NvError::HardwareError);
+    assert!(block_on(app.step()).is_err());
+    assert!(app.router().factory_reset_pending());
+    app.app_state_mut().write_error = None;
+    local.borrow_mut().commissioning_request = true;
+    local.borrow_mut().diagnostics.clear();
+
+    let outcome = block_on(app.step()).unwrap();
+    assert_eq!(outcome.commissioning_request, None);
+    assert!(!app.router().factory_reset_pending());
+    assert!(app.router().awaiting_commissioning_request());
+    assert!(local.borrow().commissioning_request);
+
+    let outcome = block_on(app.step()).unwrap();
+    assert_eq!(
+        outcome.commissioning_request,
+        Some(CommissioningRequestOutcome::Started)
+    );
+    assert!(!app.router().awaiting_commissioning_request());
+    assert_eq!(steering_attempts(&local), 1);
+}
+
+#[test]
+fn commissioning_request_reaching_a_joined_plug_toggles_the_relay() {
+    let local = Rc::new(RefCell::new(LocalState::default()));
+    let clock = Rc::new(Cell::new(0));
+    let mut profile = profile();
+    let mut device = device(&mut profile);
+    let mut security = security_store();
+    let mut app = app(
+        &mut device,
+        &mut security,
+        &mut profile,
+        local.clone(),
+        clock,
+        TestMeter::new([MeterServiceOutcome::Sample(nominal_sample())]),
+        ProtectionConfig::default(),
+    );
+    block_on(app.initialize()).unwrap();
+    block_on(app.step()).unwrap();
+    assert!(app.router().node().device().is_joined());
+    assert!(!app.router().node().profile().component().is_on());
+
+    local.borrow_mut().commissioning_request = true;
+    let outcome = block_on(app.step()).unwrap();
+    assert_eq!(
+        outcome.commissioning_request,
+        Some(CommissioningRequestOutcome::ToggledRelay)
+    );
+    assert!(app.router().node().device().is_joined());
+    assert!(app.router().node().profile().component().is_on());
+    assert!(local.borrow().commands.last().unwrap().relay_on);
+}
+
+#[test]
+fn factory_new_power_on_steers_without_a_button_press() {
+    let local = Rc::new(RefCell::new(LocalState::default()));
+    let clock = Rc::new(Cell::new(0));
+    let mut profile = profile();
+    let mut device = device(&mut profile);
+    let mut security = OrderedPlugSecurityStore::new(local.clone());
+    security.reset_written = true;
+    let mut app = app(
+        &mut device,
+        &mut security,
+        &mut profile,
+        local.clone(),
+        clock,
+        TestMeter::new([]),
+        ProtectionConfig::default(),
+    );
+    block_on(app.initialize()).unwrap();
+    assert!(!app.router().node().device().is_joined());
+    assert!(!app.router().awaiting_commissioning_request());
+    assert!(!awaiting_request_recorded(&local));
+    assert_eq!(steering_attempts(&local), 1);
+    assert_eq!(local.borrow().joined, Some(false));
+    assert_ne!(
+        local.borrow().statuses.last(),
+        Some(&NetworkStatus::Offline)
+    );
+}
+
+#[test]
+fn clearing_a_trip_restores_the_network_indicator() {
+    let local = Rc::new(RefCell::new(LocalState::default()));
+    let clock = Rc::new(Cell::new(0));
+    let mut profile = profile();
+    let mut device = device(&mut profile);
+    let mut security = security_store();
+    let mut app = app(
+        &mut device,
+        &mut security,
+        &mut profile,
+        local.clone(),
+        clock,
+        TestMeter::new([
+            MeterServiceOutcome::Sample(nominal_sample()),
+            MeterServiceOutcome::InputDropped,
+        ]),
+        ProtectionConfig::default(),
+    );
+    block_on(app.initialize()).unwrap();
+    block_on(app.step()).unwrap();
+    block_on(app.step()).unwrap();
+    assert_eq!(local.borrow().statuses.last(), Some(&NetworkStatus::Fault));
+
+    local.borrow_mut().clear_trip = true;
+    block_on(app.step()).unwrap();
+    assert_eq!(local.borrow().statuses.last(), Some(&NetworkStatus::Joined));
 }
 
 #[test]

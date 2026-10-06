@@ -12,7 +12,9 @@ use core::{
 use efr32mg21_brd4181a_plug::{RelayOutput, StatusLed, UserButton};
 use plug_router_app::{LocalControl, LocalRelaySelection, MeterFault, PlugClock, RelayCommand};
 use router_app::Supervisor;
-use zigbee_plug_controller::{ButtonGesture, ButtonGestureEvent, NetworkStatus, status_led_on};
+use zigbee_plug_controller::{
+    ButtonAction, ButtonGesture, NetworkStatus, button_action, status_led_on,
+};
 
 const SERVICE_PERIOD_MS: u32 = 10;
 const REQUEST_NONE: u8 = 0;
@@ -45,6 +47,8 @@ static LOCAL_RELAY_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 static ACKED_LOCAL_RELAY_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 static FACTORY_RESET_REQUESTED: AtomicBool = AtomicBool::new(false);
 static CLEAR_TRIP_REQUESTED: AtomicBool = AtomicBool::new(false);
+static NETWORK_JOINED: AtomicBool = AtomicBool::new(false);
+static COMMISSIONING_REQUESTED: AtomicBool = AtomicBool::new(false);
 static METER_TIMEOUT_ARMED: AtomicBool = AtomicBool::new(false);
 static METER_TIMEOUT_DEADLINE_MS: AtomicU32 = AtomicU32::new(0);
 static METER_TIMEOUT_KIND: AtomicU8 = AtomicU8::new(METER_FAULT_NONE);
@@ -145,16 +149,26 @@ pub fn systick_1ms(now_ms: u32) {
         state.desired_relay_on = false;
     }
 
-    match state.gesture.sample(now_ms, state.button.is_pressed()) {
-        Some(ButtonGestureEvent::ShortPress) if safety_tripped => {
+    let joined = NETWORK_JOINED.load(Ordering::Acquire);
+    let action = state
+        .gesture
+        .sample(now_ms, state.button.is_pressed())
+        .map(|gesture| button_action(gesture, safety_tripped, joined));
+    match action {
+        Some(ButtonAction::ClearTrip) => {
             CLEAR_TRIP_REQUESTED.store(true, Ordering::Release);
         }
-        Some(ButtonGestureEvent::ShortPress) => {
+        Some(ButtonAction::ToggleRelay) => {
             state.desired_relay_on = !state.desired_relay_on;
             LOCAL_RELAY_ON.store(state.desired_relay_on, Ordering::Release);
             LOCAL_RELAY_SEQUENCE.fetch_add(1, Ordering::AcqRel);
         }
-        Some(ButtonGestureEvent::LongPress) => {
+        Some(ButtonAction::RequestCommissioning) => {
+            // The main loop owns Zigbee state; acknowledge the press at once.
+            COMMISSIONING_REQUESTED.store(true, Ordering::Release);
+            NETWORK_STATUS.store(NetworkStatus::Searching as u8, Ordering::Release);
+        }
+        Some(ButtonAction::FactoryReset) => {
             let flags = ISR_INHIBIT_FLAGS.load(Ordering::Acquire);
             ISR_INHIBIT_FLAGS.store(flags | ISR_INHIBIT_FACTORY_RESET, Ordering::Release);
             SAFETY_TRIPPED.store(true, Ordering::Release);
@@ -262,6 +276,14 @@ impl LocalControl for EfrLocalControl {
 
     fn take_factory_reset_requested(&mut self) -> bool {
         take_flag(&FACTORY_RESET_REQUESTED)
+    }
+
+    fn set_network_joined(&mut self, joined: bool) {
+        NETWORK_JOINED.store(joined, Ordering::Release);
+    }
+
+    fn take_commissioning_requested(&mut self) -> bool {
+        take_flag(&COMMISSIONING_REQUESTED)
     }
 
     fn take_meter_timeout(&mut self) -> Option<MeterFault> {
