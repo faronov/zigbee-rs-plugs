@@ -66,11 +66,13 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # Same modern-tc32 toolchain release this repository's
-  # `scripts/tlsr8258-firmware.sh` (and zigbee-rs's own tc32 CI) build
-  # against.
-  TC32_TOOLCHAIN_URL: https://github.com/modern-tc32/rust/releases/download/tc32-stage2-tc32-45/tc32-rust-toolchain-linux-amd64.tar.gz
-  TC32_TOOLCHAIN_SHA256: 916732a6f5e19da722e735cb267192dbd5dda155f0701287fab52a54b852c9b7
-  TC32_TOOLCHAIN_DIR: ${{ github.workspace }}/.toolchains/tc32-stage2-tc32-45
+  # `scripts/tlsr8258-firmware.sh` and the pinned zigbee-rs core's own tc32 CI
+  # build against (rustc 1.98.1-dev, LLVM 23.1.2, tail merging enabled via
+  # `firmware/tlsr8258-plug/.cargo/config.toml`).
+  TC32_TOOLCHAIN_TAG: tc32-1.98.1-20261003-31a272
+  TC32_TOOLCHAIN_URL: https://github.com/modern-tc32/rust/releases/download/tc32-1.98.1-20261003-31a272/tc32-rust-toolchain-linux-amd64.tar.gz
+  TC32_TOOLCHAIN_SHA256: d72e68cfb7490583911323c358fd9dcc760baaa7ebdf1145cdc7208bae6b931b
+  TC32_TOOLCHAIN_DIR: ${{ github.workspace }}/.toolchains/tc32-1.98.1-20261003-31a272
 
 jobs:
   build:
@@ -104,28 +106,46 @@ jobs:
           path: zigbee-rs-plugs
           persist-credentials: false
 
-      - name: Cache tc32-45 toolchain
+      # Cache the release archive rather than the extracted tree so the pinned
+      # SHA-256 is re-verified against the exact bytes on every run,
+      # including cache hits.
+      - name: Cache pinned TC32 toolchain archive
         id: cache-tc32-toolchain
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4, recorded 2026-08-25
         with:
-          path: ${{ env.TC32_TOOLCHAIN_DIR }}
-          key: tc32-toolchain-linux-amd64-${{ env.TC32_TOOLCHAIN_SHA256 }}
+          path: ${{ runner.temp }}/tc32-archive
+          key: tc32-toolchain-archive-linux-amd64-${{ env.TC32_TOOLCHAIN_SHA256 }}
 
-      - name: Install tc32-45 toolchain
+      - name: Download pinned TC32 toolchain
         if: steps.cache-tc32-toolchain.outputs.cache-hit != 'true'
         run: |
-          mkdir -p "$TC32_TOOLCHAIN_DIR"
+          mkdir -p "$RUNNER_TEMP/tc32-archive"
           curl --proto '=https' --tlsv1.2 -fL --retry 3 \
-            "$TC32_TOOLCHAIN_URL" -o /tmp/tc32.tar.gz
-          echo "$TC32_TOOLCHAIN_SHA256  /tmp/tc32.tar.gz" | sha256sum -c -
-          tar -xzf /tmp/tc32.tar.gz --strip-components=1 -C "$TC32_TOOLCHAIN_DIR"
+            "$TC32_TOOLCHAIN_URL" -o "$RUNNER_TEMP/tc32-archive/tc32.tar.gz"
 
-      - name: Verify tc32-45 toolchain
+      - name: Verify and install pinned TC32 toolchain
         run: |
-          "$TC32_TOOLCHAIN_DIR/bin/rustc" --version --verbose
-          "$TC32_TOOLCHAIN_DIR/bin/cargo" --version --verbose
+          ARCHIVE="$RUNNER_TEMP/tc32-archive/tc32.tar.gz"
+          echo "$TC32_TOOLCHAIN_SHA256  $ARCHIVE" | sha256sum -c -
+          rm -rf "$TC32_TOOLCHAIN_DIR"
+          mkdir -p "$TC32_TOOLCHAIN_DIR"
+          tar -xzf "$ARCHIVE" --strip-components=1 -C "$TC32_TOOLCHAIN_DIR"
 
-      # The compiler cache is keyed by the verified archive digest above.
+      - name: Verify pinned TC32 toolchain
+        run: |
+          VERSION="$("$TC32_TOOLCHAIN_DIR/bin/rustc" --version --verbose)"
+          printf '%s\n' "$VERSION"
+          # This release reports commit-hash=unknown; the archive SHA pins provenance.
+          grep -Fx 'release: 1.98.1-dev' <<<"$VERSION"
+          grep -Fx 'LLVM version: 23.1.2' <<<"$VERSION"
+          "$TC32_TOOLCHAIN_DIR/bin/cargo" --version --verbose
+          "$TC32_TOOLCHAIN_DIR/bin/rustc" --print cfg --target tc32-unknown-none-elf \
+            | grep -Fx 'target_arch="tc32"'
+          for tool in llvm-nm llvm-objcopy llvm-size ld.lld; do
+            test -x "$TC32_TOOLCHAIN_DIR/llvm/bin/$tool"
+          done
+
+      # The toolchain cache is keyed by the verified archive digest above.
       # Do not cache target/ or OUT_DIR linker scripts; only immutable Cargo
       # dependency downloads are reused below.
       - name: Cache Cargo dependency downloads
@@ -134,7 +154,7 @@ jobs:
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-tc32-stage2-tc32-45-tc32-unknown-none-elf-${{ matrix.layout }}-${{ matrix.feature }}-${{ hashFiles('zigbee-rs-plugs/firmware/tlsr8258-plug/Cargo.lock', 'zigbee-rs-plugs/firmware/tlsr8258-plug/Cargo.toml', 'zigbee-rs-plugs/rust-toolchain.toml') }}
+          key: cargo-registry-${{ runner.os }}-${{ env.TC32_TOOLCHAIN_TAG }}-tc32-unknown-none-elf-${{ matrix.layout }}-${{ matrix.feature }}-${{ hashFiles('zigbee-rs-plugs/firmware/tlsr8258-plug/Cargo.lock', 'zigbee-rs-plugs/firmware/tlsr8258-plug/Cargo.toml', 'zigbee-rs-plugs/rust-toolchain.toml') }}
 
       - name: Build, layout + symbol gate, size metadata (EXPERIMENTAL, not hardware-proven)
         env:

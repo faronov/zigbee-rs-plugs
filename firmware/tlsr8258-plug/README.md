@@ -40,15 +40,18 @@ The public core GitHub Pages book will not include this model until the branch
 is merged and Pages is deployed.
 
 Firmware builds require the modern-tc32
-`tc32-stage2-tc32-45` toolchain. The checked local toolchain reports
-`rustc 1.97.0-dev`, `cargo 1.97.0-dev`, and LLVM 23. CI downloads the archive
-whose SHA-256 is
-`916732a6f5e19da722e735cb267192dbd5dda155f0701287fab52a54b852c9b7`.
+[`tc32-1.98.1-20261003-31a272`](https://github.com/modern-tc32/rust/releases/tag/tc32-1.98.1-20261003-31a272)
+toolchain, the same release the pinned zigbee-rs core's tc32 CI uses. It
+reports `rustc 1.98.1-dev` and LLVM 23.1.2. CI caches the release archive and
+re-verifies its SHA-256
+`d72e68cfb7490583911323c358fd9dcc760baaa7ebdf1145cdc7208bae6b931b` on every
+run, including cache hits. `.cargo/config.toml` enables LLVM tail merging
+(`-enable-tail-merge=true`), matching the core's TLSR8258 router example.
 
 Install it at the default path:
 
 ```text
-.toolchains/tc32-stage2-tc32-45/
+.toolchains/tc32-1.98.1-20261003-31a272/
 ```
 
 or set `TC32_TOOLCHAIN` to another installation root. The helper uses that

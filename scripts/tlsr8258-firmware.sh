@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_TOOLCHAIN="${ROOT_DIR}/.toolchains/tc32-stage2-tc32-45"
+DEFAULT_TOOLCHAIN="${ROOT_DIR}/.toolchains/tc32-1.98.1-20261003-31a272"
 TC32_TOOLCHAIN="${TC32_TOOLCHAIN:-$DEFAULT_TOOLCHAIN}"
 CARGO_BIN="${CARGO_BIN:-$TC32_TOOLCHAIN/bin/cargo}"
 LLVM_NM="${LLVM_NM:-$TC32_TOOLCHAIN/llvm/bin/llvm-nm}"
@@ -47,7 +47,7 @@ usage: scripts/tlsr8258-firmware.sh <check|build> <crate-dir> <binary-name> <512
 
 Environment:
   TC32_TOOLCHAIN  modern-tc32 (https://github.com/modern-tc32) toolchain
-                  root. Default: ROOT/.toolchains/tc32-stage2-tc32-45
+                  root. Default: ROOT/.toolchains/tc32-1.98.1-20261003-31a272
   CARGO_BIN, LLVM_NM, LLVM_OBJCOPY  override individual tool paths
 
 This script never flashes a device. It intentionally has no `flash`

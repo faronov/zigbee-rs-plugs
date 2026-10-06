@@ -3,7 +3,7 @@ target = "tc32-unknown-none-elf"
 
 [target.tc32-unknown-none-elf]
 rustflags = [
-    "-C", "llvm-args=-enable-tail-merge=false",
+    "-C", "llvm-args=-enable-tail-merge=true",
     "-C", "link-arg=--gc-sections",
 ]
 
