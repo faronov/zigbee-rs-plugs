@@ -80,7 +80,8 @@ scripts/tlsr8258-firmware.sh build \
 
 The helper then:
 
-1. builds with the modern-tc32 `tc32-stage2-tc32-45` toolchain;
+1. builds with the pinned modern-tc32 `tc32-1.98.1-20261003-31a272` toolchain
+   (LLVM tail merging enabled; `TC32_TOOLCHAIN` overrides the directory);
 2. converts the ELF to `.bin`;
 3. verifies linker symbols, image size, RAM-code/cache/RF-DMA/stack layout;
 4. verifies hardware AES and the child-capable typed `Router` path;

@@ -14,7 +14,7 @@ The source and post-link verifier enforce this proof wiring:
 
 | Resource | Pin/source | Code-defined behavior |
 |---|---|---|
-| User button | PD2, built-in BTN0 | Active low. Configured as input with `Pull::None` because the BRD4001A supplies the bias. Sampled every 10 ms; 30 ms debounce; short press toggles the logical relay or requests trip clear; four-second hold requests factory reset. |
+| User button | PD2, built-in BTN0 | Active low. Configured as input with `Pull::None` because the BRD4001A supplies the bias. Sampled every 10 ms; 30 ms debounce; short press clears a latched trip, toggles the logical relay while joined, or requests Network Steering while not joined; four-second hold requests factory reset and re-steering. |
 | Status LED | PB0, built-in LED0 | Active high push-pull. Off initially; then follows the shared network/relay/fault LED policy. |
 | Relay proof output | PC3, WSTK expansion header pin 10 (`EXP10`) | Active high push-pull. The latch is cleared before output mode is enabled. This is only a low-voltage logic proof point; no mains interface is defined. |
 | Clock | HFXO | Configured for 38.4 MHz with CTUNE 133. SysTick supplies the 1 kHz local service and a 1 MHz Embassy time base. |

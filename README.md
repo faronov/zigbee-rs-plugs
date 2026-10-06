@@ -42,6 +42,22 @@ deployment constraints.
 See [docs/architecture.md](docs/architecture.md) for the complete ownership,
 persistence, and reset model.
 
+## Button behavior
+
+All plug products share one button policy, implemented in
+`zigbee_plug_controller::button_action` and covered by host tests:
+
+- **short press, joined:** toggle the relay and report OnOff;
+- **short press, not joined:** start Network Steering; the LED blinks while
+  searching or joining;
+- **short press, trip latched:** clear the protection or meter trip;
+- **hold for 4 s:** relay Off, factory reset, then pair again immediately.
+
+A never-commissioned plug starts pairing by itself on power-up. After a
+coordinator Leave/Remove the plug stays dark and waits for a short press,
+following the zigbee-rs `14ba6df` router policy. Details:
+[architecture](docs/architecture.md#button-and-commissioning).
+
 ## Validation status
 
 | Target | Role | Validation reached | Not proven |

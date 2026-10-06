@@ -137,21 +137,46 @@ the partition contract; the board owns only the fitted flash resource.
 
 ## Current measured builds
 
-The following local measurements were regenerated from the current dirty
-worktree on 2026-08-26 with `tc32-stage2-tc32-45`. They are build evidence,
-not stable release identifiers or hardware proof.
+The following local measurements were regenerated on 2026-10-06 from commit
+`b02b7f5` (zigbee-rs core `14ba6df`) with `tc32-1.98.1-20261003-31a272` and
+LLVM tail merging. Every entry passed the layout check and symbol gate. They
+are build evidence, not stable release identifiers or hardware proof.
 
 | Product | Image | Headroom to `0x70000` | RAM code | SHA-256 |
 |---|---:|---:|---:|---|
-| `tz3000-gjnozsaz-1m` | 371,400 B | 87,352 B | 4,836 B | `76083cab7b0b5fc43d55b3498f14d3ba2e0499bbe7ac013a83706c6a58d31846` |
-| `tz3000-gjnozsaz-512k` | 371,396 B | 87,356 B | 4,840 B | `bcd7050bae94640a7e382e8b3f507e9bbcbb5152939eb39e65ac40da5e98ae7c` |
-| `tz3000-w0qqde0g` | 371,400 B | 87,352 B | 4,836 B | `0b378978c209cd3e569b0d7337e68c0c80d771f8768cd114e82e9e870e362251` |
-| `tz3000-zloso4jk` | 371,400 B | 87,352 B | 4,836 B | `c083eec6d4427b29bd69d4ffc70ac4d8eaffb2ab9145f4e13fb5d45b9dac3bed` |
-| `legacy-bl0937-pd6` | 377,864 B | 80,888 B | 5,120 B | `ae09d6f87b0b3d505bb22ff0cb07e653f0b3e06aa87d54ba9b7f8dc6a9e3fcc7` |
-| `zbeacon-ts011f-512k` | 377,980 B | 80,772 B | 5,124 B | `d91921d8f54466ffa19fa91692db3299c27a9da8b15a68e85a51be33eba85462` |
+| `tz3000-gjnozsaz-1m` | 307,492 B | 151,260 B | 3,620 B | `80118f9f31f894940be043e023ebb9c348e95bd21b408b3e623c8bacc951aed3` |
+| `tz3000-gjnozsaz-512k` | 307,496 B | 151,256 B | 3,624 B | `c9e64d83053be6c58255eeb3478ebdf065097e5179c82abf6f03236d0fc8c541` |
+| `tz3000-w0qqde0g` | 307,492 B | 151,260 B | 3,620 B | `aa434c7fd7b5e8d40532240efa28ce75fc96b4343b64e2c9be14ac18c3ab10a8` |
+| `tz3000-zloso4jk` | 307,492 B | 151,260 B | 3,620 B | `e93d512810a868f1ccd0808e39e617a7901dfc7f8e00b77660c72d315c25510c` |
+| `legacy-bl0937-pd6` | 308,864 B | 149,888 B | 3,804 B | `e8a117d5161582eceeb0c32d54c4135a4a539df178340621be3acd96524c9760` |
+| `zbeacon-ts011f-512k` | 309,040 B | 149,712 B | 3,808 B | `7134861ac1222296d0516ce03ff9083a31a6835a8a5396acfe5f66ff775092a8` |
+
+For comparison, the previous core pin `1d7df8f` built with the retired
+`tc32-stage2-tc32-45` toolchain produced 371,400 B for `tz3000-gjnozsaz-1m`;
+the current core no longer fits below `0x70000` with that toolchain.
 
 Use the generated `*.size.json` from a particular build as the source of
 truth for that artifact.
+
+## Button behavior
+
+| Gesture (30 ms debounce) | Plug state | Action |
+|---|---|---|
+| short press | protection or meter trip latched | clear the trip; power returns only after a fresh safe meter sample |
+| short press | joined | toggle the relay; the change is copied into ZCL OnOff and reported |
+| short press | not joined | request Network Steering; the LED starts blinking |
+| hold for 4 s | any | relay Off, factory reset, then immediate Network Steering |
+
+Network state at power-up and after a Leave follows zigbee-rs `14ba6df`:
+
+- a never-commissioned plug starts steering by itself on power-up;
+- a commissioned plug resumes its network and does not steer;
+- after a coordinator Leave/Remove or a network-requested reset, the plug
+  becomes factory-new, keeps the LED dark, and does not search until a
+  short press. This keeps a deliberately removed plug off the air.
+
+The LED blinks while searching or joining, follows the relay once joined, and
+is solid on a fault.
 
 ## Reset and persistence behavior
 

@@ -136,7 +136,10 @@ The private core is the single implementation of:
 - deferred network reset commit so application Off is durable before security
   state and the parent child journal are cleared;
 - interrupt-owned sticky relay inhibits for long-press and meter deadlines
-  while Zigbee futures are awaiting.
+  while Zigbee futures are awaiting;
+- network-aware short-press handling: the main loop publishes the joined
+  state to the platform button service and resolves its commissioning
+  requests (see [Button and commissioning](#button-and-commissioning)).
 
 The finite `step()` sequence is intentionally observable and host-tested.
 Platform-specific Timer1/SysTick code only implements `LocalControl`; it does
@@ -223,6 +226,45 @@ records; host tests cover interrupted append, interrupted rollover, CRC
 fallback, and tombstones. Generation wrap fails closed with `NvError::Full`.
 The security journal is the shared EFR32 two-sector journal from the core
 branch.
+
+## Button and commissioning
+
+The platform button service runs every 10 ms in interrupt context (TLSR8258
+Timer1, EFR32MG21 SysTick). It debounces with
+`zigbee_plug_controller::ButtonGesture` and classifies each completed gesture
+with the pure, host-tested `zigbee_plug_controller::button_action`:
+
+| Gesture | Safety trip latched | Joined | Action |
+|---|---|---|---|
+| hold for 4 s | any | any | `FactoryReset` |
+| short press | yes | any | `ClearTrip` |
+| short press | no | yes | `ToggleRelay` |
+| short press | no | no | `RequestCommissioning` |
+
+The interrupt never touches Zigbee state. `RequestCommissioning` latches a
+flag and starts the searching blink; `PlugCore::step` drains it and calls the
+frontend's `request_commissioning()`. The joined state that the interrupt
+reads is published by the main loop through
+`LocalControl::set_network_joined` after initialization and after every
+network step, so it can be stale for at most one step. If the node joined in
+that window the router refuses the request and `PlugCore` toggles the relay
+through ZCL instead, so a press is never lost. A request latched while a
+factory reset is pending stays queued and is serviced on the step after the
+reset, so a press made just after a coordinator Leave still starts pairing.
+
+Commissioning follows the shared router frontend at zigbee-rs `14ba6df`:
+
+- first power-up of a never-commissioned plug steers without a press, the
+  common smart-plug pairing flow;
+- a coordinator Leave/Remove or a network-requested reset makes the plug
+  factory-new and waits for an explicit request. While waiting, `PlugCore`
+  shows `NetworkStatus::Offline` (LED dark) instead of the router's generic
+  "starting" status, so a removed plug stays visibly idle and off the air
+  until a short press;
+- the 4 s hold uses the core's urgent reset-and-recommission path and steers
+  immediately, matching the core nRF52840 router reference. The core exposes
+  no reset-then-wait operation, and a user holding the button intends to
+  re-pair.
 
 ## Reset and erase ordering
 
