@@ -34,7 +34,7 @@ products explicitly enable parent capability.
 ## Required core revision and toolchain
 
 The manifests fetch the core crates from immutable `zigbee-rs` revision
-[`1d7df8ffbaa794ecca27c1e082c1c023b0094ca7`](https://github.com/faronov/zigbee-rs/tree/1d7df8ffbaa794ecca27c1e082c1c023b0094ca7);
+[`14ba6df7309602cc31a08e97667c732d61b9580d`](https://github.com/faronov/zigbee-rs/tree/14ba6df7309602cc31a08e97667c732d61b9580d);
 no adjacent checkout is required.
 The public core GitHub Pages book will not include this model until the branch
 is merged and Pages is deployed.

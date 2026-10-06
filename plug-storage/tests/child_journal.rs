@@ -94,6 +94,10 @@ fn child(timeout: u8) -> PersistentChild {
         security_capable: true,
         is_router: false,
         end_device_timeout: timeout,
+        removal_pending: false,
+        removal_attempts: 0,
+        reassignment_address: None,
+        departure_pending: false,
     }
 }
 

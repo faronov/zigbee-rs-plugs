@@ -41,24 +41,24 @@ zigbee-plug-hardware = { path = "plug-hardware" }
 zigbee-plug-profile = { path = "zigbee-plug-profile" }
 zigbee-plug-storage = { path = "plug-storage" }
 embedded-storage = "0.3"
-efr32mg21-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
+efr32mg21-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
 heapless = "0.9"
-router-app = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7", default-features = false }
+router-app = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d", default-features = false }
 static_cell = "2"
-tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
-tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
+tlsr8258-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
+tlsr8258-rt = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
 # Shared application/profile crates only need the platform-neutral trait.
 # Each standalone firmware root selects exactly its own backend/AES features.
-zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
-zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
-zigbee-aps = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
-zigbee-crypto = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
+zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
+zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
+zigbee-aps = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
+zigbee-crypto = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
 # Shared crates stay role-neutral. Parent firmware enables `router` through
 # `plug-router-app/router`; the EFR32 proof therefore carries no routing,
 # parent, or child-table capacities.
-zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7", default-features = false }
-zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
-zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7", default-features = false }
+zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d", default-features = false }
+zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
+zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

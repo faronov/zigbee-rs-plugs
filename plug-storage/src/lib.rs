@@ -118,12 +118,12 @@ pub fn split_onboard_flash<T: OnboardFlashToken>(
 /// `region_start`, or `None` if the access would leave the partition or
 /// overflow an address.
 ///
-/// This is the shared bounds check behind `flash::ChildTableFlash`,
-/// `flash::AppNvFlash`, and `flash::SecurityFlash`; it is plain,
-/// `const`-friendly arithmetic with
-/// no hardware dependency, so it is exercised directly by this crate's host
-/// tests even though the `NorFlash` wrappers themselves only build for
-/// `target_arch = "tc32"`.
+/// This is the host-testable model of the partition bounds rule that the
+/// HAL `FlashRegion` behind `flash::ChildTableFlash`, `flash::AppNvFlash`,
+/// and `flash::SecurityFlash` enforces on the `tc32` target; it is plain,
+/// `const`-friendly arithmetic with no hardware dependency, so it is
+/// exercised directly by this crate's host tests even though the `NorFlash`
+/// wrappers themselves only build for `target_arch = "tc32"`.
 pub const fn checked_partition_offset(
     region_start: u32,
     region_size: usize,

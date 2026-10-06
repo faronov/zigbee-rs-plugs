@@ -91,7 +91,7 @@ Their only difference is the statically selected network frontend.
 ### `PlugRouterApp`
 
 `PlugRouterApp` wraps
-[`router_app::ParentRouterApp`](https://github.com/faronov/zigbee-rs/blob/1d7df8ffbaa794ecca27c1e082c1c023b0094ca7/apps/router/src/app.rs).
+[`router_app::ParentRouterApp`](https://github.com/faronov/zigbee-rs/blob/14ba6df7309602cc31a08e97667c732d61b9580d/apps/router/src/app.rs).
 It requires:
 
 - a `ParentMacDriver`;
@@ -104,7 +104,7 @@ before parent service begins. All six TLSR8258 products use this composition.
 ### `AlwaysOnEndDevicePlugApp`
 
 `AlwaysOnEndDevicePlugApp` wraps
-[`router_app::AlwaysOnEndDeviceApp`](https://github.com/faronov/zigbee-rs/blob/1d7df8ffbaa794ecca27c1e082c1c023b0094ca7/apps/router/src/app.rs).
+[`router_app::AlwaysOnEndDeviceApp`](https://github.com/faronov/zigbee-rs/blob/14ba6df7309602cc31a08e97667c732d61b9580d/apps/router/src/app.rs).
 It needs only `MacDriver`, and its role is statically
 `zigbee_runtime::role::EndDevice`.
 
@@ -277,7 +277,7 @@ and electrical validation.
 ## Experiment-branch dependency
 
 The manifests currently consume the adjacent
-[`1d7df8f`](https://github.com/faronov/zigbee-rs/tree/1d7df8ffbaa794ecca27c1e082c1c023b0094ca7)
+[`14ba6df`](https://github.com/faronov/zigbee-rs/tree/14ba6df7309602cc31a08e97667c732d61b9580d)
 checkout by relative path. They are not pinned to the older published commit
 described by previous documentation.
 

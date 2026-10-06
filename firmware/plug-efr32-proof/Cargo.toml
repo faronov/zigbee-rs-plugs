@@ -12,23 +12,23 @@ path = "src/main.rs"
 cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
 cortex-m-rt = { version = "0.7", features = ["device"] }
 efr32mg21-brd4181a-plug = { path = "../../boards/efr32mg21-brd4181a-plug" }
-efr32mg21-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
+efr32mg21-hal = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
 embassy-executor = { version = "0.7", features = ["arch-cortex-m", "executor-thread"] }
 embassy-time = { version = "0.4", features = ["tick-hz-1_000_000"] }
 embassy-time-driver = "0.2"
 log = "0.4"
 plug-efr32-proof = { package = "plug-efr32-proof-product", path = "../../products/plug-efr32-proof" }
 plug-router-app = { path = "../../apps/plug-router", default-features = false }
-router-app = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7", default-features = false }
+router-app = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d", default-features = false }
 rtt-target = { version = "0.6", features = ["log"] }
 static_cell = "2"
-zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7", features = ["efr32mg21"] }
-zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
+zigbee-mac = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d", features = ["efr32mg21"] }
+zigbee-nwk = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
 zigbee-plug-controller = { path = "../../plug-controller" }
 zigbee-plug-core = { path = "../../plug-core" }
-zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7", default-features = false }
-zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7" }
-zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "1d7df8ffbaa794ecca27c1e082c1c023b0094ca7", default-features = false }
+zigbee-runtime = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d", default-features = false }
+zigbee-types = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d" }
+zigbee-zcl = { git = "https://github.com/faronov/zigbee-rs.git", rev = "14ba6df7309602cc31a08e97667c732d61b9580d", default-features = false }
 
 [profile.release]
 opt-level = "s"

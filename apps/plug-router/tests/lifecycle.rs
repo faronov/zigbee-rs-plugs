@@ -445,6 +445,10 @@ fn child_table(extended_pan_id: [u8; 8]) -> PersistentChildTable {
             security_capable: true,
             is_router: false,
             end_device_timeout: 8,
+            removal_pending: false,
+            removal_attempts: 0,
+            reassignment_address: None,
+            departure_pending: false,
         })
         .unwrap();
     table
